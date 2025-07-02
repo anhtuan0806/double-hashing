@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <sstream>
 #include <unordered_set>
+#include <cmath>
 
 enum SlotState {
     EMPTY,
@@ -577,7 +578,7 @@ namespace BenchmarkUtils {
         }
 
         // Hàm in tiêu đề cho bảng thống kê chi tiết
-        void printDetailHeader(void) {
+        void printDetailHeader() {
             std::cout << std::left << std::setw(20) << "Algorithm"
                 << std::setw(12) << "LoadFac"
                 << std::setw(10) << "Insert"
@@ -597,7 +598,7 @@ namespace BenchmarkUtils {
     template <typename Table>
     StatResult testTable(Table& table, const std::vector<std::pair<int, int>>& keyvals, const std::vector<int>& search_hit_indices, const std::vector<int>& search_missKeys, const std::vector<int>& delete_indices) {
         const int NUM_RUNS = 3;
-        StatResult res;
+        StatResult res{};
         long long totalInsertTime = 0, totalSearchHitTime = 0, totalSearchMissTime = 0, totalDeleteTime = 0;
 
         // Thống kê probe cho từng loại search
@@ -660,15 +661,16 @@ namespace BenchmarkUtils {
                 table.stats = tempTable.stats;
         }
 
-        int nHit = search_hit_indices.size() * NUM_RUNS;
-        int nMiss = search_missKeys.size() * NUM_RUNS;
+        size_t nHit = search_hit_indices.size() * NUM_RUNS;
+        size_t nMiss = search_missKeys.size() * NUM_RUNS;
 
         res.insertTime = totalInsertTime / NUM_RUNS;
         res.searchTime = (totalSearchHitTime + totalSearchMissTime) / NUM_RUNS;
         res.deleteTime = totalDeleteTime / NUM_RUNS;
-        res.avgProbeSearchHit = (nHit ? 1.0 * totalProbeSearchHit / nHit : 0);
-        res.avgProbeSearchMiss = (nMiss ? 1.0 * totalProbeSearchMiss / nMiss : 0);
-        res.avgProbeInsertAfterDelete = (nInsertAfterDelete ? 1.0 * totalProbeInsertAfterDelete / nInsertAfterDelete : 0);
+        res.avgProbeSearchHit = nHit ? static_cast<double>(totalProbeSearchHit) / nHit : 0.0;
+        res.avgProbeSearchMiss = nMiss ? static_cast<double>(totalProbeSearchMiss) / nMiss : 0.0;
+        res.avgProbeInsertAfterDelete =
+            nInsertAfterDelete ? static_cast<double>(totalProbeInsertAfterDelete) / nInsertAfterDelete : 0.0;
 
         return res;
     }
@@ -744,7 +746,7 @@ void runStaticBenchmarkWithRehash(int M, double lf1, double lf2, int N1, int N2,
         helper::iota(all_indices.begin(), all_indices.end(), 0);
 
         int num_search = M;
-        int numMiss = int(num_search * missRate + 0.5);
+        int numMiss = static_cast<int>(std::lround(num_search * missRate));
         int num_hit = num_search - numMiss;
 
         // Hit indices
@@ -826,7 +828,7 @@ void runStaticBenchmarkWithoutRehash(int M, double lf1, double lf2, int N1, int 
         helper::iota(all_indices.begin(), all_indices.end(), 0);
 
         int num_search = M;
-        int numMiss = int(num_search * missRate + 0.5);
+        int numMiss = static_cast<int>(std::lround(num_search * missRate));
         int num_hit = num_search - numMiss;
 
         // Hit indices
@@ -883,7 +885,7 @@ void runStaticBenchmarkWithoutRehash(int M, double lf1, double lf2, int N1, int 
     }
 }
 
-int main(void) {
+int main() {
     std::cout << "=== HASH TABLE BENCHMARKING ===\n";
 
     // Nhập danh sách số lượng phần tử cần kiểm thử
