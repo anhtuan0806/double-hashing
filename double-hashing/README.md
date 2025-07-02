@@ -30,6 +30,7 @@ g++ -std=c++17 -O2 main.cpp -o double-hashing
 # Chạy chương trình
 ./double-hashing
 ```
+
 ## Tác giả
 
 - Nhóm 9
