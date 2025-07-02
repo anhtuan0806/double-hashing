@@ -31,6 +31,12 @@ g++ -std=c++17 -O2 main.cpp -o double-hashing
 ./double-hashing
 ```
 
+## Cập nhật
+
+- Sửa lỗi tên biến gây lỗi biên dịch ở các hàm benchmark.
+- Bổ sung hướng dẫn build chi tiết hơn.
+- Hoàn thiện hàm `main` để tự động chạy benchmark cho các kích thước nhập vào.
+
 ## Tác giả
 
 - Nhóm 9
