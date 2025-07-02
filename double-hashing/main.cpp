@@ -29,11 +29,13 @@ struct Stats {
 enum class Probing { LINEAR, QUADRATIC, DOUBLE };
 
 namespace helper {
+// Trả về bộ sinh số ngẫu nhiên dùng chung
 inline mt19937 &rng() {
   static mt19937 r(
       (unsigned)chrono::steady_clock::now().time_since_epoch().count());
   return r;
 }
+// Kiểm tra một số có phải số nguyên tố hay không
 inline bool isPrime(int n) {
   if (n <= 1)
     return false;
@@ -46,6 +48,7 @@ inline bool isPrime(int n) {
       return false;
   return true;
 }
+// Trả về số nguyên tố đầu tiên lớn hơn n
 inline int nextPrime(int n) {
   while (!isPrime(++n))
     ;
@@ -53,6 +56,7 @@ inline int nextPrime(int n) {
 }
 } // namespace helper
 
+// Lớp bảng băm tổng quát hỗ trợ nhiều kiểu dò tìm
 template <class K, class V> class HashTable {
   vector<Entry<K, V>> table;
   int sz;
@@ -63,14 +67,17 @@ template <class K, class V> class HashTable {
 
 public:
   Stats stats;
+  // Khởi tạo bảng băm với kích thước và kiểu dò tìm cho trước
   HashTable(int s, Probing t, bool rehash = true)
       : sz(helper::nextPrime(s)), used(0), type(t), allowRehash(rehash) {
     prime = helper::nextPrime(sz / 2);
     table.assign(sz, {});
   }
 
+  // Tính hệ số tải của bảng
   double loadFactor() const { return (double)used / sz; }
 
+  // Tăng kích thước bảng và băm lại toàn bộ dữ liệu
   void rehash(int hint) {
     int newSize = helper::nextPrime(hint);
     vector<Entry<K, V>> old = table;
@@ -83,6 +90,7 @@ public:
         insert(e.key, e.value);
   }
 
+  // Thêm hoặc cập nhật một cặp khoá/giá trị vào bảng
   bool insert(const K &key, const V &val) {
     if (allowRehash && loadFactor() > 0.7)
       rehash(sz * 2);
@@ -109,6 +117,7 @@ public:
     }
   }
 
+  // Tìm kiếm giá trị theo khoá
   bool search(const K &key, V &out) {
     int base = key % sz;
     int step = 0;
@@ -134,6 +143,7 @@ public:
     return false;
   }
 
+  // Xoá phần tử theo khoá
   void erase(const K &key) {
     int base = key % sz;
     int step = 0;
@@ -162,6 +172,7 @@ public:
     stats.nDel++;
   }
 
+  // Độ dài dãy liên tiếp lớn nhất của các ô đã sử dụng
   int maxCluster() const {
     int cur = 0, mx = 0;
     for (auto &e : table) {
@@ -173,6 +184,7 @@ public:
     }
     return mx;
   }
+  // Độ dài trung bình của các cụm khoá liên tiếp
   double avgCluster() const {
     int cur = 0, tot = 0, cnt = 0;
     for (auto &e : table) {
@@ -194,6 +206,7 @@ public:
   }
 
 private:
+  // Tính vị trí cần kiểm tra tiếp theo tùy theo phương pháp dò
   int calcProbe(int base, int step, K key) const {
     switch (type) {
     case Probing::LINEAR:
@@ -214,6 +227,7 @@ struct BenchResult {
 };
 
 namespace Gen {
+// Sinh ngẫu nhiên M cặp khoá/giá trị với giới hạn khoá cho trước
 vector<pair<int, int>> randomKV(int M, int keyLim) {
   uniform_int_distribution<int> dk(1, keyLim), dv(1, 1e6);
   unordered_set<int> used;
@@ -227,6 +241,7 @@ vector<pair<int, int>> randomKV(int M, int keyLim) {
   }
   return res;
 }
+// Sinh M cặp khoá/giá trị với khoá tuần tự
 vector<pair<int, int>> sequentialKV(int M) {
   uniform_int_distribution<int> dv(1, 1e6);
   vector<pair<int, int>> res;
@@ -235,6 +250,7 @@ vector<pair<int, int>> sequentialKV(int M) {
     res.push_back({i, dv(helper::rng())});
   return res;
 }
+// Sinh dữ liệu theo từng cụm khoá gần nhau
 vector<pair<int, int>> clusteredKV(int M, int keyLim) {
   uniform_int_distribution<int> dv(1, 1e6);
   int clusters = 5, per = M / clusters;
@@ -249,6 +265,7 @@ vector<pair<int, int>> clusteredKV(int M, int keyLim) {
     res.push_back({base++, dv(helper::rng())});
   return res;
 }
+// Sinh n khoá không trùng với tập đã có
 vector<int> missKeys(int n, const unordered_set<int> &exist, int keyLim) {
   unordered_set<int> used = exist;
   vector<int> res;
@@ -264,6 +281,7 @@ vector<int> missKeys(int n, const unordered_set<int> &exist, int keyLim) {
 }
 } // namespace Gen
 
+// Chạy thử nghiệm với tập dữ liệu và trả về các thống kê
 BenchResult test(HashTable<int, int> &table, const vector<pair<int, int>> &kv,
                  const vector<int> &hitIdx, const vector<int> &missKeys,
                  const vector<int> &delIdx) {
@@ -325,6 +343,7 @@ BenchResult test(HashTable<int, int> &table, const vector<pair<int, int>> &kv,
   return res;
 }
 
+// In bảng so sánh kết quả benchmark
 void summary(double lf1, double lf2, const BenchResult &a, const BenchResult &b,
              const BenchResult &c, const BenchResult &d, const BenchResult &e,
              const BenchResult &f) {
@@ -360,6 +379,7 @@ void summary(double lf1, double lf2, const BenchResult &a, const BenchResult &b,
        << f.avgInsAfterDel << '\n';
 }
 
+// In thống kê độ dài cụm khóa
 void printCluster(const BenchResult &dh, const BenchResult &lh,
                   const BenchResult &qh, const string &label) {
   cout << "\n===== CLUSTER LENGTH STATISTICS - " << label << " =====\n";
@@ -373,6 +393,7 @@ void printCluster(const BenchResult &dh, const BenchResult &lh,
        << qh.avgCluster << '\n';
 }
 
+// Nhập danh sách các kích thước cần kiểm thử
 vector<int> getSizes() {
   string line;
   cout << "Enter a list of the number of elements to test (space separated): ";
@@ -385,6 +406,7 @@ vector<int> getSizes() {
   return v;
 }
 
+// Hàm chính chạy chương trình benchmark
 int main() {
   ios::sync_with_stdio(false);
   cin.tie(nullptr);
