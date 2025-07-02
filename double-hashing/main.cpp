@@ -252,7 +252,7 @@ public:
     }
 
     // Hàm tính toán load factor
-    double loadFactor() const {
+    [[nodiscard]] double loadFactor() const {
         return static_cast<double>(keysPresent) / TABLE_SIZE;
     }
 
@@ -265,15 +265,21 @@ public:
         keysPresent = 0;
         hashTable.assign(TABLE_SIZE, Entry<K, V>());  // Tạo lại bảng băm mới
 
+        // Tạm thời vô hiệu hoá rehash để tránh gọi đệ quy
+        bool oldFlag = shouldRehash;
+        shouldRehash = false;
+
         // Rehash các phần tử đã có vào bảng mới
         for (const auto& entry : oldTable) {
             if (entry.state == OCCUPIED) {
                 insert(entry.key, entry.value);
             }
         }
+
+        shouldRehash = oldFlag;
     }
 
-    int maxClusterLength() const {
+    [[nodiscard]] int maxClusterLength() const {
         int maxLen = 0;
         int curLen = 0;
         for (const auto& entry : hashTable) {
@@ -288,7 +294,7 @@ public:
         return maxLen;
     }
 
-    double avgClusterLength() const {
+    [[nodiscard]] double avgClusterLength() const {
         int totalClusters = 0, totalLen = 0, curLen = 0;
         for (const auto& entry : hashTable) {
             if (entry.state == OCCUPIED) {
