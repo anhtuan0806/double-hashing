@@ -20,7 +20,7 @@ struct Entry {
     K key;
     V value;
     SlotState state;
-    Entry() : state(EMPTY) {}
+    Entry() : key(), value(), state(EMPTY) {}
     Entry(const K& k, const V& v, SlotState s) : key(k), value(v), state(s) {}
 };
 
