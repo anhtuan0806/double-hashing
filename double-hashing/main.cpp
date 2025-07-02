@@ -461,8 +461,8 @@ int main() {
     vector<int> tests = getSizes();
     double lf1 = 0.5, lf2 = 0.9;
     cout << "Auto-selected optimal load factors: 0.5 and 0.9\n";
-    double missRate = 0.5;
-    cout << "Using default miss rate for search operations: 0.5 (50%)\n";
+    double missRate = 0.2;
+    cout << "Using default miss rate for search operations: 0.2 (20%)\n";
     for (int M : tests) {
         int N1 = helper::nextPrime(int(M / lf1)),
             N2 = helper::nextPrime(int(M / lf2));
@@ -519,7 +519,7 @@ int main() {
         cout << "\n=== FINISHED TEST SIZE: " << M << " ===\n";
     }
 
-	cout << "\n=== BENCHMARK COMPLETED ===\n";
-	cout << "Results saved to 'time.csv' and 'clusters.csv'.\n";
-	return 0;
+    cout << "\n=== BENCHMARK COMPLETED ===\n";
+    cout << "Results saved to 'time.csv' and 'clusters.csv'.\n";
+    return 0;
 }
