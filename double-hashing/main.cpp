@@ -159,13 +159,8 @@ public:
         return keysPresent == TABLE_SIZE;
     }
 
-    // Hàm chèn (thực hiện rehash nếu bảng vượt quá load factor và nếu shouldRehash là true)
-    bool insert(const K& key, const V& value) {
-        // Nếu bảng đã đầy và rehash được phép, thực hiện rehash
-        if (shouldRehash && loadFactor() > 0.7) {
-            rehash(TABLE_SIZE * 2);
-        }
-
+    // Hàm chèn thực sự (không gọi rehash, dùng trong insert và rehash)
+    bool insertInternal(const K& key, const V& value) {
         int probe = hash1(key, TABLE_SIZE);
         int offset = hash2(key, TABLE_SIZE);
         int probes = 1;
@@ -189,6 +184,16 @@ public:
         }
 
         return false;
+    }
+
+    // Hàm chèn (thực hiện rehash nếu bảng vượt quá load factor và nếu shouldRehash là true)
+    bool insert(const K& key, const V& value) {
+        // Nếu bảng đã đầy và rehash được phép, thực hiện rehash
+        if (shouldRehash && loadFactor() > 0.7) {
+            rehash(TABLE_SIZE * 2);
+        }
+
+        return insertInternal(key, value);
     }
 
     // Hàm tìm kiếm
@@ -273,7 +278,7 @@ public:
         // Rehash các phần tử đã có vào bảng mới
         for (const auto& entry : oldTable) {
             if (entry.state == OCCUPIED) {
-                insert(entry.key, entry.value);
+                insertInternal(entry.key, entry.value);
             }
         }
 
@@ -667,10 +672,10 @@ namespace BenchmarkUtils {
         res.insertTime = totalInsertTime / NUM_RUNS;
         res.searchTime = (totalSearchHitTime + totalSearchMissTime) / NUM_RUNS;
         res.deleteTime = totalDeleteTime / NUM_RUNS;
-        res.avgProbeSearchHit = nHit ? static_cast<double>(totalProbeSearchHit) / nHit : 0.0;
-        res.avgProbeSearchMiss = nMiss ? static_cast<double>(totalProbeSearchMiss) / nMiss : 0.0;
+        res.avgProbeSearchHit = nHit ? static_cast<double>(totalProbeSearchHit) / static_cast<double>(nHit) : 0.0;
+        res.avgProbeSearchMiss = nMiss ? static_cast<double>(totalProbeSearchMiss) / static_cast<double>(nMiss) : 0.0;
         res.avgProbeInsertAfterDelete =
-            nInsertAfterDelete ? static_cast<double>(totalProbeInsertAfterDelete) / nInsertAfterDelete : 0.0;
+            nInsertAfterDelete ? static_cast<double>(totalProbeInsertAfterDelete) / static_cast<double>(nInsertAfterDelete) : 0.0;
 
         return res;
     }
