@@ -1,951 +1,169 @@
 #include <iostream>
 #include <vector>
+#include <string>
+#include <utility>
 #include <random>
 #include <chrono>
-#include <fstream>
-#include <string>
 #include <iomanip>
 #include <sstream>
 #include <unordered_set>
+#include <algorithm>
+#include <numeric>
 #include <cmath>
+using namespace std;
 
-enum SlotState {
-    EMPTY,
-    OCCUPIED,
-    DELETED
+enum SlotState{EMPTY,OCCUPIED,DELETED};
+
+template<class K,class V>
+struct Entry{
+    K key{}; V value{}; SlotState state{EMPTY};
 };
 
-template<typename K, typename V>
-struct Entry {
-    K key;
-    V value;
-    SlotState state;
-    Entry() : key(), value(), state(EMPTY) {}
-    Entry(const K& k, const V& v, SlotState s) : key(k), value(v), state(s) {}
+struct Stats{
+    long long insProbe=0, srchProbe=0, delProbe=0;
+    long long collisions=0;
+    long long nIns=0,nSearch=0,nDel=0;
 };
 
-struct StatResult {
-    // đơn vị: microseconds
-    long long insertTime;
-    long long searchTime;
-    long long deleteTime;
-    double avgProbeSearchHit;
-    double avgProbeSearchMiss;
-    double avgProbeInsertAfterDelete;
-};
+enum class Probing{LINEAR,QUADRATIC,DOUBLE};
 
-struct HashStats {
-    int totalProbesInsert = 0;
-    int totalProbesSearch = 0;
-    int totalProbesDelete = 0;
-    int totalCollision = 0;
-    int nInsert = 0;
-    int nSearch = 0;
-    int nDelete = 0;
-};
-
-namespace helper {
-
-    // rng dùng chung cho toàn namespace, tránh sinh cùng seed liên tục
-    inline std::mt19937& rng() {
-        static thread_local std::mt19937 eng(static_cast<unsigned>(std::chrono::steady_clock::now().time_since_epoch().count()));
-        return eng;
-    }
-
-    // Fisher–Yates shuffle
-    template<typename T>
-    void shuffle(std::vector<T>& vec) {
-        for (int i = vec.size() - 1; i > 0; --i) {
-            std::uniform_int_distribution<int> dist(0, i);
-            int j = dist(rng());
-            std::swap(vec[i], vec[j]);
-        }
-    }
-
-    // Hàm iota thủ công
-    template<typename Iterator, typename T>
-    void iota(Iterator begin, Iterator end, T value) {
-        while (begin != end) {
-            *begin++ = value++;
-        }
-    }
-
-    // Kiểm tra số nguyên tố
-    inline bool isPrime(int n) {
-        if (n <= 1) return false; // Số nhỏ hơn hoặc bằng 1 không phải là số nguyên tố
-        if (n == 2 || n == 3) return true; // 2 và 3 là số nguyên tố
-        if (n % 2 == 0 || n % 3 == 0) return false; // Bỏ qua các số chẵn và số chia hết cho 3
-
-        // Kiểm tra các ước số từ 5 đến căn bậc hai của n
-        for (int i = 5; i * i <= n; i += 6) { // Kiểm tra các số 5, 7, 11, 13, 17, ...
-            if (n % i == 0 || n % (i + 2) == 0) {
-                return false; // Nếu n chia hết cho i hoặc i+2 thì không phải số nguyên tố
-            }
-        }
-
-        return true;
-    }
-
-    // Tìm số nguyên tố lớn hơn n
-    inline int nextPrime(int n) {
-        int x = n + 1;
-        while (!isPrime(x)) ++x;
-        return x;
-    }
-
-    // Double to string với precision tuỳ chỉnh
-    inline std::string doubleToStr(double x, int precision = 2) {
-        std::ostringstream oss;
-        oss << std::fixed << std::setprecision(precision) << x;
-        return oss.str();
-    }
-
-    // Ghi 1 dòng csv
-    void writeCSVRow(std::ofstream& fout, const std::vector<std::string>& cols) {
-        for (size_t i = 0; i < cols.size(); ++i) {
-            fout << cols[i];
-            if (i + 1 < cols.size()) fout << ",";
-        }
-        fout << "\n";
-    }
+namespace helper{
+    inline mt19937& rng(){static mt19937 r((unsigned)chrono::steady_clock::now().time_since_epoch().count());return r;}
+    inline bool isPrime(int n){ if(n<=1) return false; if(n<=3) return true; if(n%2==0||n%3==0) return false; for(int i=5;i*i<=n;i+=6) if(n%i==0||n%(i+2)==0) return false; return true; }
+    inline int nextPrime(int n){ while(!isPrime(++n)); return n; }
 }
 
-namespace hashing {
-
-    // Các hàm hash cho Double Hashing, Linear Probing, Quadratic Probing
-    int doubleHash1(int key, int TABLE_SIZE) {
-        return key % TABLE_SIZE;
-    }
-
-    int doubleHash2(int key, int PRIME) {
-        return PRIME - (key % PRIME);
-    }
-
-    int linearHash(int key, int TABLE_SIZE) {
-        return key % TABLE_SIZE;
-    }
-
-    int quadraticHash(int key, int TABLE_SIZE) {
-        return key % TABLE_SIZE;
-    }
-}
-
-template<typename K, typename V, typename HashFunc1, typename HashFunc2>
-class HashTableBase {
-    int TABLE_SIZE;
-    int keysPresent;
-    std::vector<Entry<K, V>> hashTable;
-    HashFunc1 hash1;
-    HashFunc2 hash2;
-    bool shouldRehash;
-
+template<class K,class V>
+class HashTable{
+    vector<Entry<K,V>> table; int sz; int used; Probing type; bool allowRehash; int prime;
 public:
-    HashStats stats;
-
-    // Constructor nhận các hàm băm và kích thước bảng ban đầu
-    HashTableBase(int n, HashFunc1 h1, HashFunc2 h2, bool rehashFlag = true)
-        : hash1(h1), hash2(h2), shouldRehash(rehashFlag) {
-        TABLE_SIZE = n;
-        keysPresent = 0;
-        hashTable.assign(TABLE_SIZE, Entry<K, V>());
+    Stats stats;
+    HashTable(int s, Probing t, bool rehash=true):sz(helper::nextPrime(s)),used(0),type(t),allowRehash(rehash){
+        prime = helper::nextPrime(sz/2); table.assign(sz,{});
     }
 
-    // Kiểm tra bảng đã đầy chưa
-    bool isFull() {
-        return keysPresent == TABLE_SIZE;
+    double loadFactor()const{return (double)used/sz;}
+
+    void rehash(int hint){
+        int newSize = helper::nextPrime(hint);
+        vector<Entry<K,V>> old = table; table.assign(newSize,{}); sz=newSize; used=0; prime=helper::nextPrime(sz/2);
+        for(auto &e:old) if(e.state==OCCUPIED) insert(e.key,e.value);
     }
 
-    // Hàm chèn thực sự (không gọi rehash, dùng trong insert và rehash)
-    bool insertInternal(const K& key, const V& value) {
-        int probe = hash1(key, TABLE_SIZE);
-        int offset = hash2(key, TABLE_SIZE);
-        int probes = 1;
-
-        // Tìm vị trí trống hoặc cập nhật giá trị nếu key đã tồn tại
-        while (hashTable[probe].state == OCCUPIED && hashTable[probe].key != key) {
-            probe = (probe + offset) % TABLE_SIZE;
-            probes++;
-        }
-
-        if (hashTable[probe].state != OCCUPIED) {
-            hashTable[probe] = Entry<K, V>(key, value, OCCUPIED);
-            keysPresent++;
-            stats.totalProbesInsert += probes;
-            stats.nInsert++;
-            return true;
-        }
-        else if (hashTable[probe].key == key) {
-            hashTable[probe].value = value;
-            return true;
-        }
-
-        return false;
+    bool insert(const K& key,const V& val){
+        if(allowRehash && loadFactor()>0.7) rehash(sz*2);
+        int base=key%sz; int step=0; int probe; int probes=1;
+        while(true){
+            probe = calcProbe(base,step,key);
+            if(table[probe].state!=OCCUPIED){
+                table[probe]={key,val,OCCUPIED}; used++; stats.insProbe+=probes; stats.nIns++; return true;
+            }
+            if(table[probe].key==key){ table[probe].value=val; return true; }
+            stats.collisions++; step++; probes++; }
     }
 
-    // Hàm chèn (thực hiện rehash nếu bảng vượt quá load factor và nếu shouldRehash là true)
-    bool insert(const K& key, const V& value) {
-        // Nếu bảng đã đầy và rehash được phép, thực hiện rehash
-        if (shouldRehash && loadFactor() > 0.7) {
-            rehash(TABLE_SIZE * 2);
-        }
-
-        return insertInternal(key, value);
+    bool search(const K& key,V& out){
+        int base=key%sz; int step=0; int probe; int probes=1;
+        while(true){
+            probe=calcProbe(base,step,key);
+            if(table[probe].state==EMPTY) break;
+            if(table[probe].state==OCCUPIED && table[probe].key==key){
+                out=table[probe].value; stats.srchProbe+=probes; stats.nSearch++; return true; }
+            step++; probes++; if(step>=sz) break; }
+        stats.srchProbe+=probes; stats.nSearch++; return false;
     }
 
-    // Hàm tìm kiếm
-    bool search(const K& key, V& outValue) {
-        int probe = hash1(key, TABLE_SIZE);
-        int offset = hash2(key, TABLE_SIZE);
-        int initialPos = probe;
-        int probes = 1;
-        bool firstItr = true;
+    void erase(const K& key){
+        int base=key%sz; int step=0; int probe; int probes=1;
+        while(true){
+            probe=calcProbe(base,step,key);
+            if(table[probe].state==EMPTY){ stats.delProbe+=probes; stats.nDel++; return; }
+            if(table[probe].state==OCCUPIED && table[probe].key==key){
+                table[probe].state=DELETED; used--; stats.delProbe+=probes; stats.nDel++; return; }
+            step++; probes++; if(step>=sz) break; }
+        stats.delProbe+=probes; stats.nDel++; }
 
-        while (true) {
-            if (hashTable[probe].state == EMPTY)
-                break;
-            if (hashTable[probe].state == OCCUPIED && hashTable[probe].key == key) {
-                outValue = hashTable[probe].value;
-                stats.totalProbesSearch += probes;
-                stats.nSearch++;
-                return true;
-            }
-            if (probe == initialPos && !firstItr)
-                break;
-            probe = (probe + offset) % TABLE_SIZE;
-            probes++;
-            firstItr = false;
+    int maxCluster()const{
+        int cur=0, mx=0; for(auto &e:table){ if(e.state==OCCUPIED){cur++;mx=max(mx,cur);} else cur=0;} return mx; }
+    double avgCluster()const{
+        int cur=0,tot=0,cnt=0; for(auto &e:table){ if(e.state==OCCUPIED) cur++; else{ if(cur){tot+=cur;cnt++;cur=0;} } } if(cur){tot+=cur;cnt++;} return cnt?double(tot)/cnt:0.0; }
+private:
+    int calcProbe(int base,int step,K key)const{
+        switch(type){
+            case Probing::LINEAR: return (base+step)%sz;
+            case Probing::QUADRATIC: return (base+step*step)%sz;
+            default: return (base+step*(prime-(key%prime)))%sz;
         }
-
-        stats.totalProbesSearch += probes;
-        stats.nSearch++;
-        return false;
-    }
-
-    // Hàm xóa
-    void erase(const K& key) {
-        int probe = hash1(key, TABLE_SIZE);
-        int offset = hash2(key, TABLE_SIZE);
-        int initialPos = probe;
-        int probes = 1;
-        bool firstItr = true;
-
-        while (true) {
-            if (hashTable[probe].state == EMPTY) {
-                stats.totalProbesDelete += probes;
-                stats.nDelete++;
-                return;
-            }
-            if (hashTable[probe].state == OCCUPIED && hashTable[probe].key == key) {
-                hashTable[probe].state = DELETED;
-                keysPresent--;
-                stats.totalProbesDelete += probes;
-                stats.nDelete++;
-                return;
-            }
-            if (probe == initialPos && !firstItr) {
-                stats.totalProbesDelete += probes;
-                stats.nDelete++;
-                return;
-            }
-            probe = (probe + offset) % TABLE_SIZE;
-            probes++;
-            firstItr = false;
-        }
-    }
-
-    // Hàm tính toán load factor
-    double loadFactor() const {
-        return static_cast<double>(keysPresent) / TABLE_SIZE;
-    }
-
-    // Hàm thực hiện rehash khi cần
-    void rehash(int new_size_hint) {
-        int new_size = helper::nextPrime(new_size_hint); // Chọn kích thước mới là số nguyên tố gần nhất
-        std::vector<Entry<K, V>> oldTable = hashTable;
-
-        TABLE_SIZE = new_size;  // Cập nhật kích thước bảng mới
-        keysPresent = 0;
-        hashTable.assign(TABLE_SIZE, Entry<K, V>());  // Tạo lại bảng băm mới
-
-        // Tạm thời vô hiệu hoá rehash để tránh gọi đệ quy
-        bool oldFlag = shouldRehash;
-        shouldRehash = false;
-
-        // Rehash các phần tử đã có vào bảng mới
-        for (const auto& entry : oldTable) {
-            if (entry.state == OCCUPIED) {
-                insertInternal(entry.key, entry.value);
-            }
-        }
-
-        shouldRehash = oldFlag;
-    }
-
-    int maxClusterLength() const {
-        int maxLen = 0;
-        int curLen = 0;
-        for (const auto& entry : hashTable) {
-            if (entry.state == OCCUPIED) {
-                ++curLen;
-                maxLen = std::max(maxLen, curLen);
-            }
-            else {
-                curLen = 0;
-            }
-        }
-        return maxLen;
-    }
-
-    double avgClusterLength() const {
-        int totalClusters = 0, totalLen = 0, curLen = 0;
-        for (const auto& entry : hashTable) {
-            if (entry.state == OCCUPIED) {
-                ++curLen;
-            }
-            else {
-                if (curLen > 0) {
-                    ++totalClusters;
-                    totalLen += curLen;
-                    curLen = 0;
-                }
-            }
-        }
-        // Nếu bảng kết thúc bằng một cluster
-        if (curLen > 0) {
-            ++totalClusters;
-            totalLen += curLen;
-        }
-        if (totalClusters == 0)
-            return 0;
-        else
-            return (double)(totalLen) / totalClusters;
     }
 };
 
-// Hàm tạo bảng băm với kích thước M, có rehash hay không
-void createHashTables(int M, bool shouldRehash = true);
+struct BenchResult{long long insTime=0, searchTime=0, delTime=0; double avgHit=0, avgMiss=0, avgInsAfterDel=0;};
 
-void createHashTables(int M, bool shouldRehash) {
-    int N = helper::nextPrime(M);  // Tính size bảng băm cho load factor
-
-    // Double Hashing
-    HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> dht(
-        N, hashing::doubleHash1, hashing::doubleHash2, shouldRehash
-    );
-
-    // Linear Probing
-    HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> lht(
-        N, hashing::linearHash, hashing::linearHash, shouldRehash
-    );
-
-    // Quadratic Probing
-    HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> qht(
-        N, hashing::quadraticHash, hashing::quadraticHash, shouldRehash
-    );
+namespace Gen{
+    vector<pair<int,int>> randomKV(int M,int keyLim){
+        uniform_int_distribution<int> dk(1,keyLim), dv(1,1e6); unordered_set<int> used; vector<pair<int,int>> res; while((int)res.size()<M){int k=dk(helper::rng()); if(used.count(k)) continue; used.insert(k); res.push_back({k,dv(helper::rng())});} return res; }
+    vector<pair<int,int>> sequentialKV(int M){ uniform_int_distribution<int> dv(1,1e6); vector<pair<int,int>> res; res.reserve(M); for(int i=1;i<=M;i++) res.push_back({i,dv(helper::rng())}); return res; }
+    vector<pair<int,int>> clusteredKV(int M,int keyLim){ uniform_int_distribution<int> dv(1,1e6); int clusters=5, per=M/clusters; vector<pair<int,int>> res; int base=1; for(int c=0;c<clusters;c++){ for(int i=0;i<per && (int)res.size()<M;i++) res.push_back({base+i,dv(helper::rng())}); base+=keyLim/clusters; } while((int)res.size()<M) res.push_back({base++,dv(helper::rng())}); return res; }
+    vector<int> missKeys(int n,const unordered_set<int>& exist,int keyLim){ unordered_set<int> used=exist; vector<int> res; uniform_int_distribution<int> dk(1,keyLim); while((int)res.size()<n){int k=dk(helper::rng()); if(used.count(k)) continue; used.insert(k); res.push_back(k);} return res; }
 }
 
-namespace BenchmarkUtils {
-    namespace getInput {
+BenchResult test(HashTable<int,int>& table,const vector<pair<int,int>>& kv,const vector<int>& hitIdx,const vector<int>& missKeys,const vector<int>& delIdx){
+    BenchResult res; const int RUN=2; long long tIns=0,tHit=0,tMiss=0,tDel=0; long long probeHit=0,probeMiss=0,probeInsDel=0; int nInsDel=0; for(int r=0;r<RUN;r++){ HashTable<int,int> t(table); auto t1=chrono::high_resolution_clock::now(); for(auto &kvp:kv) t.insert(kvp.first,kvp.second); auto t2=chrono::high_resolution_clock::now(); int tmp; auto t3=chrono::high_resolution_clock::now(); for(int idx:hitIdx){int before=t.stats.srchProbe; t.search(kv[idx].first,tmp); probeHit+=t.stats.srchProbe-before;} auto t4=chrono::high_resolution_clock::now(); auto t5=chrono::high_resolution_clock::now(); for(int k:missKeys){int before=t.stats.srchProbe; t.search(k,tmp); probeMiss+=t.stats.srchProbe-before;} auto t6=chrono::high_resolution_clock::now(); auto t7=chrono::high_resolution_clock::now(); for(int idx:delIdx) t.erase(kv[idx].first); auto t8=chrono::high_resolution_clock::now(); uniform_int_distribution<int> dv(1,1e6); for(int idx:delIdx){int before=t.stats.insProbe; t.insert(kv[idx].first,dv(helper::rng())); probeInsDel+=t.stats.insProbe-before; nInsDel++;} tIns+=chrono::duration_cast<chrono::microseconds>(t2-t1).count(); tHit+=chrono::duration_cast<chrono::microseconds>(t4-t3).count(); tMiss+=chrono::duration_cast<chrono::microseconds>(t6-t5).count(); tDel+=chrono::duration_cast<chrono::microseconds>(t8-t7).count(); if(r==0) table.stats=t.stats; }
+    int nHit=hitIdx.size()*RUN,nMiss=missKeys.size()*RUN; res.insTime=tIns/RUN; res.searchTime=(tHit+tMiss)/RUN; res.delTime=tDel/RUN; res.avgHit=nHit?double(probeHit)/nHit:0; res.avgMiss=nMiss?double(probeMiss)/nMiss:0; res.avgInsAfterDel=nInsDel?double(probeInsDel)/nInsDel:0; return res; }
 
-        // Sử dụng stringstream để lấy một loạt đầu vào
-        std::vector<int> getTestSizes() {
-            std::string input;
-            std::cout << "Enter a list of the number of elements to test (separated by space): ";
-            std::getline(std::cin, input);
-            std::stringstream ss(input);
+void summary(double lf1,double lf2,const BenchResult& a,const BenchResult& b,const BenchResult& c,const BenchResult& d,const BenchResult& e,const BenchResult& f){
+    cout<<"\n===== TABLE OF PERFORMANCE COMPARISON (us) =====\n";
+    cout<<setw(50)<<left<<" "<<setw(20)<<"Double Hash"<<setw(20)<<"Linear"<<setw(20)<<"Quadratic"<<'\n';
+    cout<<setw(50)<<left<<"[Insert Time] LF1"<<setw(20)<<a.insTime<<setw(20)<<c.insTime<<setw(20)<<e.insTime<<'\n';
+    cout<<setw(50)<<left<<"[Insert Time] LF2"<<setw(20)<<b.insTime<<setw(20)<<d.insTime<<setw(20)<<f.insTime<<'\n';
+    cout<<setw(50)<<left<<"[Search Time] LF1"<<setw(20)<<a.searchTime<<setw(20)<<c.searchTime<<setw(20)<<e.searchTime<<'\n';
+    cout<<setw(50)<<left<<"[Search Time] LF2"<<setw(20)<<b.searchTime<<setw(20)<<d.searchTime<<setw(20)<<f.searchTime<<'\n';
+    cout<<setw(50)<<left<<"[Delete Time] LF1"<<setw(20)<<a.delTime<<setw(20)<<c.delTime<<setw(20)<<e.delTime<<'\n';
+    cout<<setw(50)<<left<<"[Delete Time] LF2"<<setw(20)<<b.delTime<<setw(20)<<d.delTime<<setw(20)<<f.delTime<<'\n';
+    cout<<"\n----- PROBE STATISTICS (Average probes per operation) -----\n";
+    cout<<setw(50)<<left<<"[Avg probe/search HIT] LF1"<<setw(20)<<a.avgHit<<setw(20)<<c.avgHit<<setw(20)<<e.avgHit<<'\n';
+    cout<<setw(50)<<left<<"[Avg probe/search MISS] LF1"<<setw(20)<<a.avgMiss<<setw(20)<<c.avgMiss<<setw(20)<<e.avgMiss<<'\n';
+    cout<<setw(50)<<left<<"[Avg probe/insert-after-delete] LF1"<<setw(20)<<a.avgInsAfterDel<<setw(20)<<c.avgInsAfterDel<<setw(20)<<e.avgInsAfterDel<<'\n';
+    cout<<setw(50)<<left<<"[Avg probe/search HIT] LF2"<<setw(20)<<b.avgHit<<setw(20)<<d.avgHit<<setw(20)<<f.avgHit<<'\n';
+    cout<<setw(50)<<left<<"[Avg probe/search MISS] LF2"<<setw(20)<<b.avgMiss<<setw(20)<<d.avgMiss<<setw(20)<<f.avgMiss<<'\n';
+    cout<<setw(50)<<left<<"[Avg probe/insert-after-delete] LF2"<<setw(20)<<b.avgInsAfterDel<<setw(20)<<d.avgInsAfterDel<<setw(20)<<f.avgInsAfterDel<<'\n';
+}
 
-            std::vector<int> testSizes;
-            int size;
-            while (ss >> size) {
-                testSizes.push_back(size);
+void printCluster(const HashTable<int,int>& dh,const HashTable<int,int>& lh,const HashTable<int,int>& qh,const string& label){
+    cout<<"\n===== CLUSTER LENGTH STATISTICS - "<<label<<" =====\n";
+    cout<<setw(32)<<left<<" "<<setw(20)<<"Double Hash"<<setw(20)<<"Linear"<<setw(20)<<"Quadratic"<<'\n';
+    cout<<setw(32)<<left<<"[Max cluster length]:"<<setw(20)<<dh.maxCluster()<<setw(20)<<lh.maxCluster()<<setw(20)<<qh.maxCluster()<<'\n';
+    cout<<setw(32)<<left<<"[Avg cluster length]:"<<setw(20)<<dh.avgCluster()<<setw(20)<<lh.avgCluster()<<setw(20)<<qh.avgCluster()<<'\n';
+}
+
+vector<int> getSizes(){ string line; cout<<"Enter a list of the number of elements to test (space separated): "; getline(cin,line); stringstream ss(line); vector<int> v; int x; while(ss>>x) v.push_back(x); return v; }
+
+int main(){
+    ios::sync_with_stdio(false); cin.tie(nullptr);
+    cout<<"=== HASH TABLE BENCHMARKING ===\n";
+    vector<int> tests=getSizes();
+    double lf1=0.5, lf2=0.9; cout<<"Auto-selected optimal load factors: 0.5 and 0.9\n";
+    double missRate=0.5; cout<<"Using default miss rate for search operations: 0.5 (50%)\n";
+    for(int M:tests){
+        int N1=helper::nextPrime(int(M/lf1)), N2=helper::nextPrime(int(M/lf2));
+        cout<<"TABLE_SIZE with load factor 1 ("<<lf1<<"): "<<N1<<'\n';
+        cout<<"TABLE_SIZE with load factor 2 ("<<lf2<<"): "<<N2<<'\n';
+        for(int rehash=0; rehash<2; ++rehash){
+            bool allow=rehash; string rh=allow?"WITH":"WITHOUT"; cout<<"\n===== RUN "<<rh<<" REHASH =====\n";
+            for(int type=1; type<=3; ++type){
+                string pattern = type==1?"RANDOM": type==2?"SEQUENTIAL":"CLUSTERED"; cout<<"\n>>> DATA PATTERN: "<<pattern<<'\n';
+                vector<pair<int,int>> kv = type==1?Gen::randomKV(M,max(N1,N2)*10): type==2?Gen::sequentialKV(M):Gen::clusteredKV(M,max(N1,N2)*10);
+                vector<int> all(M); iota(all.begin(),all.end(),0); int numSearch=M; int numMiss=lround(numSearch*missRate); int numHit=numSearch-numMiss; vector<int> idx=all; shuffle(idx.begin(),idx.end(),helper::rng()); vector<int> hit(idx.begin(),idx.begin()+numHit); unordered_set<int> exist; for(auto &p:kv) exist.insert(p.first); vector<int> miss=Gen::missKeys(numMiss,exist,max(N1,N2)*10); vector<int> del=all; shuffle(del.begin(),del.end(),helper::rng()); del.resize(M);
+                HashTable<int,int> dh1(N1,Probing::DOUBLE,allow), dh2(N2,Probing::DOUBLE,allow);
+                HashTable<int,int> lh1(N1,Probing::LINEAR,allow), lh2(N2,Probing::LINEAR,allow);
+                HashTable<int,int> qh1(N1,Probing::QUADRATIC,allow), qh2(N2,Probing::QUADRATIC,allow);
+                printCluster(dh1,lh1,qh1,"After Insert with LF1");
+                printCluster(dh2,lh2,qh2,"After Insert with LF2");
+                BenchResult r1=test(dh1,kv,hit,miss,del), r2=test(dh2,kv,hit,miss,del), r3=test(lh1,kv,hit,miss,del), r4=test(lh2,kv,hit,miss,del), r5=test(qh1,kv,hit,miss,del), r6=test(qh2,kv,hit,miss,del);
+                summary(lf1,lf2,r1,r2,r3,r4,r5,r6);
             }
-
-            return testSizes;
         }
-
-        // Hàm này trả về một vector load factor mặc định là {0.5, 0.9}
-        std::vector<double> getUserLoadFactors() {
-            std::vector<double> loadFactors = { 0.5, 0.9 }; // Mặc định là 0.5 và 0.9
-            std::cout << "Auto-selected optimal load factors: 0.5 and 0.9\n";
-            return loadFactors;
-        }
-
-        double getMissRate() {
-            double missRate = 0.5;  // Giá trị mặc định là 50%
-            std::cout << "Using default miss rate for search operations: 0.5 (50%)\n";
-            return missRate;
-        }
-    }
-
-    namespace generator {
-        // Hàm sinh các cặp key-value ngẫu nhiên
-        std::vector<std::pair<int, int>> generateRandomKeyVals(int M, int keyUpper, int valUpper = 1000000) {
-            std::uniform_int_distribution<int> distKey(1, keyUpper);
-            std::uniform_int_distribution<int> distVal(1, valUpper);
-
-            std::unordered_set<int> used;
-            std::vector<std::pair<int, int>> keyvals;
-            while (keyvals.size() < M) {
-                int key = distKey(helper::rng());
-                if (used.count(key)) continue;
-                used.insert(key);
-                keyvals.emplace_back(key, distVal(helper::rng()));
-            }
-            return keyvals;
-        }
-
-        // Sinh M cặp (key, value) tuần tự từ 1 tới M, value ngẫu nhiên
-        std::vector<std::pair<int, int>> generateSequentialKeyVals(int M, int valUpper = 1000000) {
-            std::uniform_int_distribution<int> distVal(1, valUpper);
-            std::vector<std::pair<int, int>> keyvals;
-            keyvals.reserve(M);
-            for (int i = 1; i <= M; ++i)
-                keyvals.emplace_back(i, distVal(helper::rng()));
-            return keyvals;
-        }
-
-        // Sinh M cặp (key, value) theo từng cụm liên tiếp, value ngẫu nhiên
-        std::vector<std::pair<int, int>> generateClusteredKeyVals(int M, int keyUpper, int valUpper = 1000000) {
-            std::uniform_int_distribution<int> distVal(1, valUpper);
-
-            int numClusters = 5;
-            int perCluster = M / numClusters;
-            std::vector<std::pair<int, int>> keyvals;
-            keyvals.reserve(M);
-            int base = 1;
-            for (int c = 0; c < numClusters; ++c) {
-                for (int i = 0; i < perCluster && keyvals.size() < M; ++i) {
-                    keyvals.emplace_back(base + i, distVal(helper::rng()));
-                }
-                base += keyUpper / numClusters;
-            }
-            while (keyvals.size() < M) {
-                keyvals.emplace_back(base++, distVal(helper::rng()));
-            }
-            return keyvals;
-        }
-
-
-        // Sinh numMiss key chưa tồn tại trong existKeys
-        std::vector<int> generateMissKeys(int numMiss, const std::unordered_set<int>& existKeys, int keyUpperBound) {
-            std::unordered_set<int> used = existKeys; // copy
-            std::vector<int> missKeys;
-            std::uniform_int_distribution<int> distKey(1, keyUpperBound);
-
-            while ((int)missKeys.size() < numMiss) {
-                int key = distKey(helper::rng());
-                if (used.count(key)) continue;
-                missKeys.push_back(key);
-                used.insert(key);
-            }
-            return missKeys;
-        }
-    }
-
-    /// Insert toàn bộ cặp key-value vào 3 bảng băm (double, linear, quadratic), sau đó in thống kê độ dài cụm (cluster length).
-    template<typename DHTable, typename LTable, typename QTable>
-    void insertAndPrintClusterStats(const DHTable& dht, const LTable& lpt, const QTable& qpt,
-        const std::vector<std::pair<int, int>>& keyvals,
-        const std::string& label = "")
-    {
-        // Copy bảng gốc để giữ nguyên trạng thái ngoài
-        DHTable dht_copy = dht;
-        LTable lpt_copy = lpt;
-        QTable qpt_copy = qpt;
-
-        // Insert dữ liệu vào các bản sao
-        for (const auto& [key, value] : keyvals) {
-            dht_copy.insert(key, value);
-            lpt_copy.insert(key, value);
-            qpt_copy.insert(key, value);
-        }
-
-        // In thống kê cluster length
-        std::string labelStr;
-        if (label.empty())
-            labelStr = "";
-        else
-            labelStr = " - " + label;
-        std::cout << "\n===== CLUSTER LENGTH STATISTICS" << labelStr << " =====\n";
-        std::cout << std::setw(32) << std::left << " "
-            << std::setw(20) << "Double Hashing"
-            << std::setw(20) << "Linear Probing"
-            << std::setw(20) << "Quadratic Probing" << '\n';
-
-        std::cout << std::setw(32) << std::left << "[Max cluster length]:"
-            << std::setw(20) << dht_copy.maxClusterLength()
-            << std::setw(20) << lpt_copy.maxClusterLength()
-            << std::setw(20) << qpt_copy.maxClusterLength() << '\n';
-
-        std::cout << std::setw(32) << std::left << "[Avg cluster length]:"
-            << std::setw(20) << dht_copy.avgClusterLength()
-            << std::setw(20) << lpt_copy.avgClusterLength()
-            << std::setw(20) << qpt_copy.avgClusterLength() << '\n';
-    }
-
-    namespace printOutput {
-        void printTableSizes(double lf1, double lf2, int N1, int N2) {
-            std::cout << "TABLE_SIZE with load factor 1 (" << lf1 << "): " << N1 << '\n';
-            std::cout << "TABLE_SIZE with load factor 2 (" << lf2 << "): " << N2 << '\n';
-        }
-
-        // Hàm in bảng thống kê tổng hợp thời gian thực hiện các thao tác
-        void printSummaryTable(double lf1, double lf2, const StatResult& dht1, const StatResult& dht2, const StatResult& lpt1, const StatResult& lpt2, const StatResult& qpt1, const StatResult& qpt2) {
-            std::cout << "\n===== TABLE OF PERFORMANCE COMPARISON (us) =====\n";
-            std::cout << std::setw(50) << std::left << " "
-                << std::setw(20) << "Double Hashing"
-                << std::setw(20) << "Linear Probing"
-                << std::setw(20) << "Quadratic Probing" << '\n';
-
-            // Thời gian thực hiện các thao tác
-            std::cout << std::setw(50) << std::left << ("[Insert Time] LF1 (" + helper::doubleToStr(lf1) + "):")
-                << std::setw(20) << dht1.insertTime
-                << std::setw(20) << lpt1.insertTime
-                << std::setw(20) << qpt1.insertTime << '\n';
-
-            std::cout << std::setw(50) << std::left << ("[Insert Time] LF2 (" + helper::doubleToStr(lf2) + "):")
-                << std::setw(20) << dht2.insertTime
-                << std::setw(20) << lpt2.insertTime
-                << std::setw(20) << qpt2.insertTime << '\n';
-
-            std::cout << std::setw(50) << std::left << ("[Search Time] LF1 (" + helper::doubleToStr(lf1) + "):")
-                << std::setw(20) << dht1.searchTime
-                << std::setw(20) << lpt1.searchTime
-                << std::setw(20) << qpt1.searchTime << '\n';
-
-            std::cout << std::setw(50) << std::left << ("[Search Time] LF2 (" + helper::doubleToStr(lf2) + "):")
-                << std::setw(20) << dht2.searchTime
-                << std::setw(20) << lpt2.searchTime
-                << std::setw(20) << qpt2.searchTime << '\n';
-
-            std::cout << std::setw(50) << std::left << ("[Delete Time] LF1 (" + helper::doubleToStr(lf1) + "):")
-                << std::setw(20) << dht1.deleteTime
-                << std::setw(20) << lpt1.deleteTime
-                << std::setw(20) << qpt1.deleteTime << '\n';
-
-            std::cout << std::setw(50) << std::left << ("[Delete Time] LF2 (" + helper::doubleToStr(lf2) + "):")
-                << std::setw(20) << dht2.deleteTime
-                << std::setw(20) << lpt2.deleteTime
-                << std::setw(20) << qpt2.deleteTime << '\n';
-
-            // In probe search hit/miss/insert after delete
-            std::cout << "\n----- PROBE STATISTICS (Average probes per operation) -----\n";
-            std::cout << std::setw(50) << std::left << "[Avg probe/search HIT] LF1:"
-                << std::setw(20) << dht1.avgProbeSearchHit
-                << std::setw(20) << lpt1.avgProbeSearchHit
-                << std::setw(20) << qpt1.avgProbeSearchHit << '\n';
-
-            std::cout << std::setw(50) << std::left << "[Avg probe/search MISS] LF1:"
-                << std::setw(20) << dht1.avgProbeSearchMiss
-                << std::setw(20) << lpt1.avgProbeSearchMiss
-                << std::setw(20) << qpt1.avgProbeSearchMiss << '\n';
-
-            std::cout << std::setw(50) << std::left << "[Avg probe/insert-after-delete] LF1:"
-                << std::setw(20) << dht1.avgProbeInsertAfterDelete
-                << std::setw(20) << lpt1.avgProbeInsertAfterDelete
-                << std::setw(20) << qpt1.avgProbeInsertAfterDelete << '\n';
-
-            std::cout << std::setw(50) << std::left << "[Avg probe/search HIT] LF2:"
-                << std::setw(20) << dht2.avgProbeSearchHit
-                << std::setw(20) << lpt2.avgProbeSearchHit
-                << std::setw(20) << qpt2.avgProbeSearchHit << '\n';
-
-            std::cout << std::setw(50) << std::left << "[Avg probe/search MISS] LF2:"
-                << std::setw(20) << dht2.avgProbeSearchMiss
-                << std::setw(20) << lpt2.avgProbeSearchMiss
-                << std::setw(20) << qpt2.avgProbeSearchMiss << '\n';
-
-            std::cout << std::setw(50) << std::left << "[Avg probe/insert-after-delete] LF2:"
-                << std::setw(20) << dht2.avgProbeInsertAfterDelete
-                << std::setw(20) << lpt2.avgProbeInsertAfterDelete
-                << std::setw(20) << qpt2.avgProbeInsertAfterDelete << '\n';
-        }
-
-        // Hàm in bảng thống kê chi tiết về số lần probe, số lần va chạm và tỷ lệ va chạm
-        template <typename Table>
-        void printDetailStats(const std::string& algoName, double lf, Table& table) {
-            const auto& stats = table.stats;
-
-            double avgInsertProbes = 0;
-            if (stats.nInsert > 0)
-                avgInsertProbes = 1.0 * stats.totalProbesInsert / stats.nInsert;
-
-            double collisionRate = 0;
-            if (stats.nInsert > 0)
-                collisionRate = 100.0 * stats.totalCollision / stats.nInsert;
-
-            double avgSearchProbes = 0;
-            if (stats.nSearch > 0)
-                avgSearchProbes = 1.0 * stats.totalProbesSearch / stats.nSearch;
-
-            double avgDeleteProbes = 0;
-            if (stats.nDelete > 0)
-                avgDeleteProbes = 1.0 * stats.totalProbesDelete / stats.nDelete;
-
-            std::cout << std::left
-                << std::setw(20) << algoName
-                << std::setw(12) << std::fixed << std::setprecision(2) << lf
-                << std::setw(10) << stats.nInsert
-                << std::setw(12) << std::fixed << std::setprecision(4) << avgInsertProbes
-                << std::setw(10) << stats.totalCollision
-                << std::setw(12) << std::fixed << std::setprecision(4) << collisionRate
-                << std::setw(10) << stats.nSearch
-                << std::setw(12) << std::fixed << std::setprecision(4) << avgSearchProbes
-                << std::setw(10) << stats.nDelete
-                << std::setw(12) << std::fixed << std::setprecision(4) << avgDeleteProbes
-                << '\n';
-        }
-
-        // Hàm in tiêu đề cho bảng thống kê chi tiết
-        void printDetailHeader() {
-            std::cout << std::left << std::setw(20) << "Algorithm"
-                << std::setw(12) << "LoadFac"
-                << std::setw(10) << "Insert"
-                << std::setw(12) << "Probe/Ins"
-                << std::setw(10) << "Coll"
-                << std::setw(12) << "CollRate"
-                << std::setw(10) << "Search"
-                << std::setw(12) << "Probe/S"
-                << std::setw(10) << "Delete"
-                << std::setw(12) << "Probe/D"
-                << '\n';
-            std::cout << std::string(120, '-') << '\n';
-        }
-    }
-
-    // Hàm tính thời gian thực hiện các thao tác trên bảng băm
-    template <typename Table>
-    StatResult testTable(Table& table, const std::vector<std::pair<int, int>>& keyvals, const std::vector<int>& search_hit_indices, const std::vector<int>& search_missKeys, const std::vector<int>& delete_indices) {
-        const int NUM_RUNS = 2;
-        StatResult res{};
-        long long totalInsertTime = 0, totalSearchHitTime = 0, totalSearchMissTime = 0, totalDeleteTime = 0;
-
-        // Thống kê probe cho từng loại search
-        long long totalProbeSearchHit = 0, totalProbeSearchMiss = 0;
-        long long totalProbeInsertAfterDelete = 0;
-        int nInsertAfterDelete = 0;
-
-        for (int run = 0; run < NUM_RUNS; ++run) {
-            Table tempTable(table); // clone
-
-            // Insert all keyvals
-            auto t1 = std::chrono::high_resolution_clock::now();
-            for (auto& kv : keyvals)
-                tempTable.insert(kv.first, kv.second);
-            auto t2 = std::chrono::high_resolution_clock::now();
-
-            // Search HIT (tồn tại)
-            int tmp;
-            auto t3 = std::chrono::high_resolution_clock::now();
-            for (int idx : search_hit_indices) {
-                int probes_before = tempTable.stats.totalProbesSearch;
-                tempTable.search(keyvals[idx].first, tmp);
-                totalProbeSearchHit += tempTable.stats.totalProbesSearch - probes_before;
-            }
-            auto t4 = std::chrono::high_resolution_clock::now();
-
-            // Search MISS (không tồn tại)
-            auto t5 = std::chrono::high_resolution_clock::now();
-            for (int key : search_missKeys) {
-                int probes_before = tempTable.stats.totalProbesSearch;
-                tempTable.search(key, tmp);
-                totalProbeSearchMiss += tempTable.stats.totalProbesSearch - probes_before;
-            }
-            auto t6 = std::chrono::high_resolution_clock::now();
-
-            // Delete các key
-            auto t7 = std::chrono::high_resolution_clock::now();
-            for (int idx : delete_indices)
-                tempTable.erase(keyvals[idx].first);
-            auto t8 = std::chrono::high_resolution_clock::now();
-
-            // Insert lại các key vừa xóa (giá trị mới random)
-            std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
-            std::uniform_int_distribution<int> distVal(1, 1000000);
-            for (int idx : delete_indices) {
-                int probes_before = tempTable.stats.totalProbesInsert;
-                tempTable.insert(keyvals[idx].first, distVal(rng));
-                totalProbeInsertAfterDelete += tempTable.stats.totalProbesInsert - probes_before;
-                nInsertAfterDelete++;
-            }
-
-            // Tính thời gian từng phần (chia nhỏ rõ ràng)
-            totalInsertTime += std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count();
-            totalSearchHitTime += std::chrono::duration_cast<std::chrono::microseconds>(t4 - t3).count();
-            totalSearchMissTime += std::chrono::duration_cast<std::chrono::microseconds>(t6 - t5).count();
-            totalDeleteTime += std::chrono::duration_cast<std::chrono::microseconds>(t8 - t7).count();
-
-            // Ghi lại stats (1 lần duy nhất)
-            if (run == 0)
-                table.stats = tempTable.stats;
-        }
-
-        size_t nHit = search_hit_indices.size() * NUM_RUNS;
-        size_t nMiss = search_missKeys.size() * NUM_RUNS;
-
-        res.insertTime = totalInsertTime / NUM_RUNS;
-        res.searchTime = (totalSearchHitTime + totalSearchMissTime) / NUM_RUNS;
-        res.deleteTime = totalDeleteTime / NUM_RUNS;
-        if (nHit)
-            res.avgProbeSearchHit = static_cast<double>(totalProbeSearchHit) / static_cast<double>(nHit);
-        else
-            res.avgProbeSearchHit = 0.0;
-
-        if (nMiss)
-            res.avgProbeSearchMiss = static_cast<double>(totalProbeSearchMiss) / static_cast<double>(nMiss);
-        else
-            res.avgProbeSearchMiss = 0.0;
-
-        if (nInsertAfterDelete)
-            res.avgProbeInsertAfterDelete = static_cast<double>(totalProbeInsertAfterDelete) / static_cast<double>(nInsertAfterDelete);
-        else
-            res.avgProbeInsertAfterDelete = 0.0;
-
-        return res;
-    }
-
-    void exportSummaryToCSV(const std::string& filename,
-        double lf1, double lf2,
-        const StatResult& dht1, const StatResult& dht2,
-        const StatResult& lpt1, const StatResult& lpt2,
-        const StatResult& qpt1, const StatResult& qpt2)
-    {
-        std::ofstream fout(filename, std::ios::app); // mở ở chế độ append
-        if (!fout) {
-            std::cerr << "ERROR: Cannot open output CSV!\n";
-            return;
-        }
-
-        // Nếu là lần đầu ghi, ghi header
-        static bool wroteHeader = false;
-        if (!wroteHeader) {
-            helper::writeCSVRow(fout, {
-                "LoadFactor", "Algorithm", "InsertTime(us)", "SearchTime(us)", "DeleteTime(us)",
-                "AvgProbeSearchHit", "AvgProbeSearchMiss", "AvgProbeInsertAfterDelete"
-                });
-            wroteHeader = true;
-        }
-
-        auto to_str = [](double v, int p = 2) {
-            std::ostringstream oss; oss << std::fixed << std::setprecision(p) << v; return oss.str();
-            };
-
-        // Ghi 6 hàng: 3 loại bảng, 2 load factor
-        helper::writeCSVRow(fout, { to_str(lf1), "Double Hashing", std::to_string(dht1.insertTime), std::to_string(dht1.searchTime), std::to_string(dht1.deleteTime),
-            to_str(dht1.avgProbeSearchHit), to_str(dht1.avgProbeSearchMiss), to_str(dht1.avgProbeInsertAfterDelete) });
-
-        helper::writeCSVRow(fout, { to_str(lf1), "Linear Probing", std::to_string(lpt1.insertTime), std::to_string(lpt1.searchTime), std::to_string(lpt1.deleteTime),
-            to_str(lpt1.avgProbeSearchHit), to_str(lpt1.avgProbeSearchMiss), to_str(lpt1.avgProbeInsertAfterDelete) });
-
-        helper::writeCSVRow(fout, { to_str(lf1), "Quadratic Probing", std::to_string(qpt1.insertTime), std::to_string(qpt1.searchTime), std::to_string(qpt1.deleteTime),
-            to_str(qpt1.avgProbeSearchHit), to_str(qpt1.avgProbeSearchMiss), to_str(qpt1.avgProbeInsertAfterDelete) });
-
-        helper::writeCSVRow(fout, { to_str(lf2), "Double Hashing", std::to_string(dht2.insertTime), std::to_string(dht2.searchTime), std::to_string(dht2.deleteTime),
-            to_str(dht2.avgProbeSearchHit), to_str(dht2.avgProbeSearchMiss), to_str(dht2.avgProbeInsertAfterDelete) });
-
-        helper::writeCSVRow(fout, { to_str(lf2), "Linear Probing", std::to_string(lpt2.insertTime), std::to_string(lpt2.searchTime), std::to_string(lpt2.deleteTime),
-            to_str(lpt2.avgProbeSearchHit), to_str(lpt2.avgProbeSearchMiss), to_str(lpt2.avgProbeInsertAfterDelete) });
-
-        helper::writeCSVRow(fout, { to_str(lf2), "Quadratic Probing", std::to_string(qpt2.insertTime), std::to_string(qpt2.searchTime), std::to_string(qpt2.deleteTime),
-            to_str(qpt2.avgProbeSearchHit), to_str(qpt2.avgProbeSearchMiss), to_str(qpt2.avgProbeInsertAfterDelete) });
+        cout<<"\n=== FINISHED TEST SIZE: "<<M<<" ===\n";
     }
 }
 
-// Hàm chạy benchmark tĩnh với rehashing, sử dụng các load factor và kích thước bảng khác nhau
-void runStaticBenchmarkWithRehash(int M, double lf1, double lf2, int N1, int N2, double missRate, int numDelete); 
-
-// Hàm chạy benchmark tĩnh không rehashing, sử dụng các load factor và kích thước bảng khác nhau
-void runStaticBenchmarkWithoutRehash(int M, double lf1, double lf2, int N1, int N2, double missRate, int numDelete);
-
-void runStaticBenchmarkWithRehash(int M, double lf1, double lf2, int N1, int N2, double missRate, int numDelete) {
-    for (int datatype = 1; datatype <= 3; ++datatype) {
-        std::string patternName;
-        if (datatype == 1) patternName = "RANDOM";
-        else if (datatype == 2) patternName = "SEQUENTIAL";
-        else patternName = "CLUSTERED";
-
-        std::cout << "\n===============================\n";
-        std::cout << ">>> DATA PATTERN: " << patternName << "\n";
-
-        // Tạo key-value tương ứng
-        std::vector<std::pair<int, int>> keyvals;
-        if (datatype == 1)
-            keyvals = BenchmarkUtils::generator::generateRandomKeyVals(M, std::max(N1, N2) * 10);
-        else if (datatype == 2)
-            keyvals = BenchmarkUtils::generator::generateSequentialKeyVals(M);
-        else
-            keyvals = BenchmarkUtils::generator::generateClusteredKeyVals(M, std::max(N1, N2) * 10);
-
-        // Sinh chỉ số search hit/miss
-        std::vector<int> all_indices(M);
-        helper::iota(all_indices.begin(), all_indices.end(), 0);
-
-        int num_search = M;
-        int numMiss = static_cast<int>(std::lround(num_search * missRate));
-        int num_hit = num_search - numMiss;
-
-        // Hit indices
-        std::vector<int> indices = all_indices;
-        helper::shuffle(indices);
-        std::vector<int> search_hit_indices(indices.begin(), indices.begin() + num_hit);
-
-        // Miss keys
-        std::unordered_set<int> existKeys;
-        for (const auto& kv : keyvals) existKeys.insert(kv.first);
-        std::vector<int> search_missKeys = BenchmarkUtils::generator::generateMissKeys(numMiss, existKeys, std::max(N1, N2) * 10);
-
-        // Delete indices
-        std::vector<int> delete_indices = all_indices;
-        helper::shuffle(delete_indices);
-        delete_indices.resize(numDelete);
-
-        // Tạo bảng băm cho 2 cấu hình LF1 và LF2 (có rehash)
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> dht1(N1, hashing::doubleHash1, hashing::doubleHash2, true),
-            dht2(N2, hashing::doubleHash1, hashing::doubleHash2, true);
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> lpt1(N1, hashing::linearHash, hashing::linearHash, true),
-            lpt2(N2, hashing::linearHash, hashing::linearHash, true);
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> qpt1(N1, hashing::quadraticHash, hashing::quadraticHash, true),
-            qpt2(N2, hashing::quadraticHash, hashing::quadraticHash, true);
-
-
-        // Thống kê cluster
-        BenchmarkUtils::insertAndPrintClusterStats(dht1, lpt1, qpt1, keyvals, "After Insert with LF1");
-        BenchmarkUtils::insertAndPrintClusterStats(dht2, lpt2, qpt2, keyvals, "After Insert with LF2");
-
-        // Đo hiệu năng
-        auto dht1_stat = BenchmarkUtils::testTable(dht1, keyvals, search_hit_indices, search_missKeys, delete_indices);
-        auto dht2_stat = BenchmarkUtils::testTable(dht2, keyvals, search_hit_indices, search_missKeys, delete_indices);
-        auto lpt1_stat = BenchmarkUtils::testTable(lpt1, keyvals, search_hit_indices, search_missKeys, delete_indices);
-        auto lpt2_stat = BenchmarkUtils::testTable(lpt2, keyvals, search_hit_indices, search_missKeys, delete_indices);
-        auto qpt1_stat = BenchmarkUtils::testTable(qpt1, keyvals, search_hit_indices, search_missKeys, delete_indices);
-        auto qpt2_stat = BenchmarkUtils::testTable(qpt2, keyvals, search_hit_indices, search_missKeys, delete_indices);
-
-        // In bảng thống kê hiệu năng
-        BenchmarkUtils::printOutput::printSummaryTable(lf1, lf2, dht1_stat, dht2_stat, lpt1_stat, lpt2_stat, qpt1_stat, qpt2_stat);
-
-        std::cout << "\n===== SUMMARY TABLE: PROBES, COLLISIONS, RATES =====\n";
-        BenchmarkUtils::printOutput::printDetailHeader();
-        BenchmarkUtils::printOutput::printDetailStats("DoubleHash-LF1", lf1, dht1);
-        BenchmarkUtils::printOutput::printDetailStats("LinearProb-LF1", lf1, lpt1);
-        BenchmarkUtils::printOutput::printDetailStats("QuadraticProb-LF1", lf1, qpt1);
-        BenchmarkUtils::printOutput::printDetailStats("DoubleHash-LF2", lf2, dht2);
-        BenchmarkUtils::printOutput::printDetailStats("LinearProb-LF2", lf2, lpt2);
-        BenchmarkUtils::printOutput::printDetailStats("QuadraticProb-LF2", lf2, qpt2);
-        std::cout << "\n";
-
-        // Xuất kết quả ra CSV
-        BenchmarkUtils::exportSummaryToCSV("benchmark_results_with_rehash.csv", lf1, lf2,
-            dht1_stat, dht2_stat, lpt1_stat, lpt2_stat, qpt1_stat, qpt2_stat);
-    }
-}
-
-void runStaticBenchmarkWithoutRehash(int M, double lf1, double lf2, int N1, int N2, double missRate, int numDelete) {
-    for (int datatype = 1; datatype <= 3; ++datatype) {
-        std::string patternName;
-        if (datatype == 1) patternName = "RANDOM";
-        else if (datatype == 2) patternName = "SEQUENTIAL";
-        else patternName = "CLUSTERED";
-
-        std::cout << "\n===============================\n";
-        std::cout << ">>> DATA PATTERN: " << patternName << "\n";
-
-        // Tạo key-value tương ứng
-        std::vector<std::pair<int, int>> keyvals;
-        if (datatype == 1)
-            keyvals = BenchmarkUtils::generator::generateRandomKeyVals(M, std::max(N1, N2) * 10);
-        else if (datatype == 2)
-            keyvals = BenchmarkUtils::generator::generateSequentialKeyVals(M);
-        else
-            keyvals = BenchmarkUtils::generator::generateClusteredKeyVals(M, std::max(N1, N2) * 10);
-
-        // Sinh chỉ số search hit/miss
-        std::vector<int> all_indices(M);
-        helper::iota(all_indices.begin(), all_indices.end(), 0);
-
-        int num_search = M;
-        int numMiss = static_cast<int>(std::lround(num_search * missRate));
-        int num_hit = num_search - numMiss;
-
-        // Hit indices
-        std::vector<int> indices = all_indices;
-        helper::shuffle(indices);
-        std::vector<int> search_hit_indices(indices.begin(), indices.begin() + num_hit);
-
-        // Miss keys
-        std::unordered_set<int> existKeys;
-        for (const auto& kv : keyvals) existKeys.insert(kv.first);
-        std::vector<int> search_missKeys = BenchmarkUtils::generator::generateMissKeys(numMiss, existKeys, std::max(N1, N2) * 10);
-
-        // Delete indices
-        std::vector<int> delete_indices = all_indices;
-        helper::shuffle(delete_indices);
-        delete_indices.resize(numDelete);
-
-        // Tạo bảng băm cho 2 cấu hình LF1 và LF2 (không có rehash)
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> dht1(N1, hashing::doubleHash1, hashing::doubleHash2, false),
-            dht2(N2, hashing::doubleHash1, hashing::doubleHash2, false);
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> lpt1(N1, hashing::linearHash, hashing::linearHash, false),
-            lpt2(N2, hashing::linearHash, hashing::linearHash, false);
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> qpt1(N1, hashing::quadraticHash, hashing::quadraticHash, false),
-            qpt2(N2, hashing::quadraticHash, hashing::quadraticHash, false);
-
-        // Thống kê cluster
-        BenchmarkUtils::insertAndPrintClusterStats(dht1, lpt1, qpt1, keyvals, "After Insert with LF1");
-        BenchmarkUtils::insertAndPrintClusterStats(dht2, lpt2, qpt2, keyvals, "After Insert with LF2");
-
-        // Đo hiệu năng
-        auto dht1_stat = BenchmarkUtils::testTable(dht1, keyvals, search_hit_indices, search_missKeys, delete_indices);
-        auto dht2_stat = BenchmarkUtils::testTable(dht2, keyvals, search_hit_indices, search_missKeys, delete_indices);
-        auto lpt1_stat = BenchmarkUtils::testTable(lpt1, keyvals, search_hit_indices, search_missKeys, delete_indices);
-        auto lpt2_stat = BenchmarkUtils::testTable(lpt2, keyvals, search_hit_indices, search_missKeys, delete_indices);
-        auto qpt1_stat = BenchmarkUtils::testTable(qpt1, keyvals, search_hit_indices, search_missKeys, delete_indices);
-        auto qpt2_stat = BenchmarkUtils::testTable(qpt2, keyvals, search_hit_indices, search_missKeys, delete_indices);
-
-        // In bảng thống kê hiệu năng
-        BenchmarkUtils::printOutput::printSummaryTable(lf1, lf2, dht1_stat, dht2_stat, lpt1_stat, lpt2_stat, qpt1_stat, qpt2_stat);
-
-        std::cout << "\n===== SUMMARY TABLE: PROBES, COLLISIONS, RATES =====\n";
-        BenchmarkUtils::printOutput::printDetailHeader();
-        BenchmarkUtils::printOutput::printDetailStats("DoubleHash-LF1", lf1, dht1);
-        BenchmarkUtils::printOutput::printDetailStats("LinearProb-LF1", lf1, lpt1);
-        BenchmarkUtils::printOutput::printDetailStats("QuadraticProb-LF1", lf1, qpt1);
-        BenchmarkUtils::printOutput::printDetailStats("DoubleHash-LF2", lf2, dht2);
-        BenchmarkUtils::printOutput::printDetailStats("LinearProb-LF2", lf2, lpt2);
-        BenchmarkUtils::printOutput::printDetailStats("QuadraticProb-LF2", lf2, qpt2);
-        std::cout << "\n";
-
-        // Xuất kết quả ra CSV
-        BenchmarkUtils::exportSummaryToCSV("benchmark_results_without_rehash.csv", lf1, lf2,
-            dht1_stat, dht2_stat, lpt1_stat, lpt2_stat, qpt1_stat, qpt2_stat);
-    }
-}
-
-int main() {
-    std::cout << "=== HASH TABLE BENCHMARKING ===\n";
-
-    // Nhập danh sách số lượng phần tử cần kiểm thử
-    std::vector<int> testSizes = BenchmarkUtils::getInput::getTestSizes();
-    // Load factor: mặc định hàm getUserLoadFactors trả về {0.5, 0.9}
-    std::vector<double> lfs = BenchmarkUtils::getInput::getUserLoadFactors();
-    double lf1 = lfs[0], lf2 = lfs[1];
-
-    double missRate = BenchmarkUtils::getInput::getMissRate();
-
-    for (int M : testSizes) {
-        int numDelete = M;               // số lượng phần tử sẽ xoá trong benchmark
-        int N1 = helper::nextPrime(int(M / lf1));
-        int N2 = helper::nextPrime(int(M / lf2));
-
-        BenchmarkUtils::printOutput::printTableSizes(lf1, lf2, N1, N2);
-
-        // Benchmark khi cho phép rehash
-        runStaticBenchmarkWithRehash(M, lf1, lf2, N1, N2, missRate, numDelete);
-
-        // Benchmark khi KHÔNG cho phép rehash
-        runStaticBenchmarkWithoutRehash(M, lf1, lf2, N1, N2, missRate, numDelete);
-
-        std::cout << "\n=== FINISHED TEST SIZE: " << M << " ===\n";
-    }
-
-    return 0;
-}
