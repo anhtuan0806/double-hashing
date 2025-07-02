@@ -130,10 +130,6 @@ namespace hashing {
     }
 }
 
-// KHAI BÁO HÀM
-// Hàm tạo bảng băm với kích thước M, có thể rehash hay không
-void createHashTables(int M, bool shouldRehash = true);
-
 template<typename K, typename V, typename HashFunc1, typename HashFunc2>
 class HashTableBase {
     int TABLE_SIZE;
@@ -325,6 +321,9 @@ public:
             return (double)(totalLen) / totalClusters;
     }
 };
+
+// Hàm tạo bảng băm với kích thước M, có rehash hay không
+void createHashTables(int M, bool shouldRehash = true);
 
 void createHashTables(int M, bool shouldRehash) {
     int N = helper::nextPrime(M);  // Tính size bảng băm cho load factor
@@ -617,7 +616,7 @@ namespace BenchmarkUtils {
     // Hàm tính thời gian thực hiện các thao tác trên bảng băm
     template <typename Table>
     StatResult testTable(Table& table, const std::vector<std::pair<int, int>>& keyvals, const std::vector<int>& search_hit_indices, const std::vector<int>& search_missKeys, const std::vector<int>& delete_indices) {
-        const int NUM_RUNS = 3;
+        const int NUM_RUNS = 2;
         StatResult res{};
         long long totalInsertTime = 0, totalSearchHitTime = 0, totalSearchMissTime = 0, totalDeleteTime = 0;
 
@@ -752,6 +751,12 @@ namespace BenchmarkUtils {
     }
 }
 
+// Hàm chạy benchmark tĩnh với rehashing, sử dụng các load factor và kích thước bảng khác nhau
+void runStaticBenchmarkWithRehash(int M, double lf1, double lf2, int N1, int N2, double missRate, int numDelete); 
+
+// Hàm chạy benchmark tĩnh không rehashing, sử dụng các load factor và kích thước bảng khác nhau
+void runStaticBenchmarkWithoutRehash(int M, double lf1, double lf2, int N1, int N2, double missRate, int numDelete);
+
 void runStaticBenchmarkWithRehash(int M, double lf1, double lf2, int N1, int N2, double missRate, int numDelete) {
     for (int datatype = 1; datatype <= 3; ++datatype) {
         std::string patternName;
@@ -876,13 +881,13 @@ void runStaticBenchmarkWithoutRehash(int M, double lf1, double lf2, int N1, int 
         helper::shuffle(delete_indices);
         delete_indices.resize(numDelete);
 
-        // Tạo bảng băm cho 2 cấu hình LF1 và LF2 (có rehash)
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> dht1(N1, hashing::doubleHash1, hashing::doubleHash2, true),
-            dht2(N2, hashing::doubleHash1, hashing::doubleHash2, true);
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> lpt1(N1, hashing::linearHash, hashing::linearHash, true),
-            lpt2(N2, hashing::linearHash, hashing::linearHash, true);
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> qpt1(N1, hashing::quadraticHash, hashing::quadraticHash, true),
-            qpt2(N2, hashing::quadraticHash, hashing::quadraticHash, true);
+        // Tạo bảng băm cho 2 cấu hình LF1 và LF2 (không có rehash)
+        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> dht1(N1, hashing::doubleHash1, hashing::doubleHash2, false),
+            dht2(N2, hashing::doubleHash1, hashing::doubleHash2, false);
+        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> lpt1(N1, hashing::linearHash, hashing::linearHash, false),
+            lpt2(N2, hashing::linearHash, hashing::linearHash, false);
+        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> qpt1(N1, hashing::quadraticHash, hashing::quadraticHash, false),
+            qpt2(N2, hashing::quadraticHash, hashing::quadraticHash, false);
 
         // Thống kê cluster
         BenchmarkUtils::insertAndPrintClusterStats(dht1, lpt1, qpt1, keyvals, "After Insert with LF1");
