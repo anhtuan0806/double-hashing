@@ -175,8 +175,8 @@ public:
             rehash(TABLE_SIZE * 2);
         }
 
-        int probe = hash1(key);
-        int offset = hash2(key);
+        int probe = hash1(key, TABLE_SIZE);
+        int offset = hash2(key, TABLE_SIZE);
         int probes = 1;
 
         // Tìm vị trí trống hoặc cập nhật giá trị nếu key đã tồn tại
@@ -202,8 +202,8 @@ public:
 
     // Hàm tìm kiếm
     bool search(const K& key, V& outValue) {
-        int probe = hash1(key);
-        int offset = hash2(key);
+        int probe = hash1(key, TABLE_SIZE);
+        int offset = hash2(key, TABLE_SIZE);
         int initialPos = probe;
         int probes = 1;
         bool firstItr = true;
@@ -231,8 +231,8 @@ public:
 
     // Hàm xóa
     void erase(const K& key) {
-        int probe = hash1(key);
-        int offset = hash2(key);
+        int probe = hash1(key, TABLE_SIZE);
+        int offset = hash2(key, TABLE_SIZE);
         int initialPos = probe;
         int probes = 1;
         bool firstItr = true;
@@ -283,10 +283,10 @@ public:
         }
     }
 
-    int maxClusterLength(const std::vector<Entry<K, V>>& table) {
+    int maxClusterLength() const {
         int maxLen = 0;
         int curLen = 0;
-        for (const auto& entry : table) {
+        for (const auto& entry : hashTable) {
             if (entry.state == OCCUPIED) {
                 ++curLen;
                 maxLen = std::max(maxLen, curLen);
@@ -298,9 +298,9 @@ public:
         return maxLen;
     }
 
-    double avgClusterLength(const std::vector<Entry<K, V>>& table) {
+    double avgClusterLength() const {
         int totalClusters = 0, totalLen = 0, curLen = 0;
-        for (const auto& entry : table) {
+        for (const auto& entry : hashTable) {
             if (entry.state == OCCUPIED) {
                 ++curLen;
             }
@@ -769,10 +769,10 @@ void runStaticBenchmarkWithRehash(int M, double lf1, double lf2, int N1, int N2,
         // Tạo bảng băm cho 2 cấu hình LF1 và LF2 (có rehash)
         HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> dht1(N1, hashing::doubleHash1, hashing::doubleHash2, true),
             dht2(N2, hashing::doubleHash1, hashing::doubleHash2, true);
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> lht1(N1, hashing::linearHash, hashing::linearHash, true),
-            lht2(N2, hashing::linearHash, hashing::linearHash, true);
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> qht1(N1, hashing::quadraticHash, hashing::quadraticHash, true),
-            qht2(N2, hashing::quadraticHash, hashing::quadraticHash, true);
+        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> lpt1(N1, hashing::linearHash, hashing::linearHash, true),
+            lpt2(N2, hashing::linearHash, hashing::linearHash, true);
+        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> qpt1(N1, hashing::quadraticHash, hashing::quadraticHash, true),
+            qpt2(N2, hashing::quadraticHash, hashing::quadraticHash, true);
 
 
         // Thống kê cluster
@@ -851,10 +851,10 @@ void runStaticBenchmarkWithoutRehash(int M, double lf1, double lf2, int N1, int 
         // Tạo bảng băm cho 2 cấu hình LF1 và LF2 (có rehash)
         HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> dht1(N1, hashing::doubleHash1, hashing::doubleHash2, true),
             dht2(N2, hashing::doubleHash1, hashing::doubleHash2, true);
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> lht1(N1, hashing::linearHash, hashing::linearHash, true),
-            lht2(N2, hashing::linearHash, hashing::linearHash, true);
-        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> qht1(N1, hashing::quadraticHash, hashing::quadraticHash, true),
-            qht2(N2, hashing::quadraticHash, hashing::quadraticHash, true);
+        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> lpt1(N1, hashing::linearHash, hashing::linearHash, true),
+            lpt2(N2, hashing::linearHash, hashing::linearHash, true);
+        HashTableBase<int, int, int(*)(int, int), int(*)(int, int)> qpt1(N1, hashing::quadraticHash, hashing::quadraticHash, true),
+            qpt2(N2, hashing::quadraticHash, hashing::quadraticHash, true);
 
         // Thống kê cluster
         BenchmarkUtils::insertAndPrintClusterStats(dht1, lpt1, qpt1, keyvals, "After Insert with LF1");
