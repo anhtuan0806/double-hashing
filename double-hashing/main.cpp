@@ -7,6 +7,8 @@
 #include <random>
 #include <sstream>
 #include <string>
+#include <fstream>
+#include <filesystem>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -379,6 +381,31 @@ void summary(double lf1, double lf2, const BenchResult &a, const BenchResult &b,
        << f.avgInsAfterDel << '\n';
 }
 
+void writeSummaryCSV(const string &pattern, const string &rehashMode, int M,
+                     double lf1, double lf2, const BenchResult &a,
+                     const BenchResult &b, const BenchResult &c,
+                     const BenchResult &d, const BenchResult &e,
+                     const BenchResult &f) {
+  bool newFile = !std::filesystem::exists("results.csv");
+  ofstream csv("results.csv", ios::app);
+  if (newFile) {
+    csv << "Pattern,Rehash,TestSize,";
+    csv << "InsLF1_DH,InsLF1_LH,InsLF1_QH,";
+    csv << "InsLF2_DH,InsLF2_LH,InsLF2_QH,";
+    csv << "SearchLF1_DH,SearchLF1_LH,SearchLF1_QH,";
+    csv << "SearchLF2_DH,SearchLF2_LH,SearchLF2_QH,";
+    csv << "DelLF1_DH,DelLF1_LH,DelLF1_QH,";
+    csv << "DelLF2_DH,DelLF2_LH,DelLF2_QH\n";
+  }
+  csv << pattern << ',' << rehashMode << ',' << M << ',';
+  csv << a.insTime << ',' << c.insTime << ',' << e.insTime << ',';
+  csv << b.insTime << ',' << d.insTime << ',' << f.insTime << ',';
+  csv << a.searchTime << ',' << c.searchTime << ',' << e.searchTime << ',';
+  csv << b.searchTime << ',' << d.searchTime << ',' << f.searchTime << ',';
+  csv << a.delTime << ',' << c.delTime << ',' << e.delTime << ',';
+  csv << b.delTime << ',' << d.delTime << ',' << f.delTime << '\n';
+}
+
 // In thống kê độ dài cụm khóa
 void printCluster(const BenchResult &dh, const BenchResult &lh,
                   const BenchResult &qh, const string &label) {
@@ -464,6 +491,7 @@ int main() {
         printCluster(r1, r3, r5, "After Insert with LF1");
         printCluster(r2, r4, r6, "After Insert with LF2");
         summary(lf1, lf2, r1, r2, r3, r4, r5, r6);
+        writeSummaryCSV(pattern, rh, M, lf1, lf2, r1, r2, r3, r4, r5, r6);
       }
     }
     cout << "\n=== FINISHED TEST SIZE: " << M << " ===\n";
