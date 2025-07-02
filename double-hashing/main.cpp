@@ -888,7 +888,31 @@ void runStaticBenchmarkWithoutRehash(int M, double lf1, double lf2, int N1, int 
 }
 
 int main(void) {
-	std::cout << "=== HASH TABLE BENCHMARKING ===\n";
-	// Lấy đầu vào từ người dùng
+    std::cout << "=== HASH TABLE BENCHMARKING ===\n";
 
+    // Nhập danh sách số lượng phần tử cần kiểm thử
+    std::vector<int> testSizes = BenchmarkUtils::getInput::getTestSizes();
+    // Load factor: mặc định hàm getUserLoadFactors trả về {0.5, 0.9}
+    std::vector<double> lfs = BenchmarkUtils::getInput::getUserLoadFactors();
+    double lf1 = lfs[0], lf2 = lfs[1];
+
+    double missRate = BenchmarkUtils::getInput::getMissRate();
+
+    for (int M : testSizes) {
+        int numDelete = M;               // số lượng phần tử sẽ xoá trong benchmark
+        int N1 = helper::nextPrime(int(M / lf1));
+        int N2 = helper::nextPrime(int(M / lf2));
+
+        BenchmarkUtils::printOutput::printTableSizes(lf1, lf2, N1, N2);
+
+        // Benchmark khi cho phép rehash
+        runStaticBenchmarkWithRehash(M, lf1, lf2, N1, N2, missRate, numDelete);
+
+        // Benchmark khi KHÔNG cho phép rehash
+        runStaticBenchmarkWithoutRehash(M, lf1, lf2, N1, N2, missRate, numDelete);
+
+        std::cout << "\n=== FINISHED TEST SIZE: " << M << " ===\n";
+    }
+
+    return 0;
 }
