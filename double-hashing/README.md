@@ -9,13 +9,13 @@
 
 ## Cấu trúc thư mục
 
-```
-Sau khi chèn dữ liệu, chương trình sẽ thống kê độ dài cluster cho từng phương pháp dò.
+```text
 double-hashing/
 ├── LICENSE           # Thông tin bản quyền
 ├── README.md         # Tài liệu mô tả, hướng dẫn dự án
 └── main.cpp          # File mã nguồn chính
 ```
+
 Sau khi chèn dữ liệu, chương trình sẽ thống kê độ dài cluster cho từng phương pháp dò.
 
 ## Hướng dẫn build & chạy
@@ -32,6 +32,7 @@ g++ -std=c++17 -O2 main.cpp -o double-hashing
 # Chạy chương trình
 ./double-hashing
 ```
+
 Sau khi chèn dữ liệu, chương trình sẽ thống kê độ dài cluster cho từng phương pháp dò.
 
 ## Tác giả
