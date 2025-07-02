@@ -97,7 +97,12 @@ private:
     }
 };
 
-struct BenchResult{long long insTime=0, searchTime=0, delTime=0; double avgHit=0, avgMiss=0, avgInsAfterDel=0;};
+struct BenchResult{
+    long long insTime=0, searchTime=0, delTime=0;
+    double avgHit=0, avgMiss=0, avgInsAfterDel=0;
+    int maxCluster=0;
+    double avgCluster=0;
+};
 
 namespace Gen{
     vector<pair<int,int>> randomKV(int M,int keyLim){
@@ -108,8 +113,61 @@ namespace Gen{
 }
 
 BenchResult test(HashTable<int,int>& table,const vector<pair<int,int>>& kv,const vector<int>& hitIdx,const vector<int>& missKeys,const vector<int>& delIdx){
-    BenchResult res; const int RUN=2; long long tIns=0,tHit=0,tMiss=0,tDel=0; long long probeHit=0,probeMiss=0,probeInsDel=0; int nInsDel=0; for(int r=0;r<RUN;r++){ HashTable<int,int> t(table); auto t1=chrono::high_resolution_clock::now(); for(auto &kvp:kv) t.insert(kvp.first,kvp.second); auto t2=chrono::high_resolution_clock::now(); int tmp; auto t3=chrono::high_resolution_clock::now(); for(int idx:hitIdx){int before=t.stats.srchProbe; t.search(kv[idx].first,tmp); probeHit+=t.stats.srchProbe-before;} auto t4=chrono::high_resolution_clock::now(); auto t5=chrono::high_resolution_clock::now(); for(int k:missKeys){int before=t.stats.srchProbe; t.search(k,tmp); probeMiss+=t.stats.srchProbe-before;} auto t6=chrono::high_resolution_clock::now(); auto t7=chrono::high_resolution_clock::now(); for(int idx:delIdx) t.erase(kv[idx].first); auto t8=chrono::high_resolution_clock::now(); uniform_int_distribution<int> dv(1,1e6); for(int idx:delIdx){int before=t.stats.insProbe; t.insert(kv[idx].first,dv(helper::rng())); probeInsDel+=t.stats.insProbe-before; nInsDel++;} tIns+=chrono::duration_cast<chrono::microseconds>(t2-t1).count(); tHit+=chrono::duration_cast<chrono::microseconds>(t4-t3).count(); tMiss+=chrono::duration_cast<chrono::microseconds>(t6-t5).count(); tDel+=chrono::duration_cast<chrono::microseconds>(t8-t7).count(); if(r==0) table.stats=t.stats; }
-    int nHit=hitIdx.size()*RUN,nMiss=missKeys.size()*RUN; res.insTime=tIns/RUN; res.searchTime=(tHit+tMiss)/RUN; res.delTime=tDel/RUN; res.avgHit=nHit?double(probeHit)/nHit:0; res.avgMiss=nMiss?double(probeMiss)/nMiss:0; res.avgInsAfterDel=nInsDel?double(probeInsDel)/nInsDel:0; return res; }
+    BenchResult res;
+    const int RUN=2;
+    long long tIns=0,tHit=0,tMiss=0,tDel=0;
+    long long probeHit=0,probeMiss=0,probeInsDel=0;
+    int nInsDel=0;
+    for(int r=0;r<RUN;r++){
+        HashTable<int,int> t(table);
+        auto t1=chrono::high_resolution_clock::now();
+        for(auto &kvp:kv) t.insert(kvp.first,kvp.second);
+        auto t2=chrono::high_resolution_clock::now();
+        if(r==0){
+            res.maxCluster=t.maxCluster();
+            res.avgCluster=t.avgCluster();
+        }
+        int tmp;
+        auto t3=chrono::high_resolution_clock::now();
+        for(int idx:hitIdx){
+            int before=t.stats.srchProbe;
+            t.search(kv[idx].first,tmp);
+            probeHit+=t.stats.srchProbe-before;
+        }
+        auto t4=chrono::high_resolution_clock::now();
+        auto t5=chrono::high_resolution_clock::now();
+        for(int k:missKeys){
+            int before=t.stats.srchProbe;
+            t.search(k,tmp);
+            probeMiss+=t.stats.srchProbe-before;
+        }
+        auto t6=chrono::high_resolution_clock::now();
+        auto t7=chrono::high_resolution_clock::now();
+        for(int idx:delIdx) t.erase(kv[idx].first);
+        auto t8=chrono::high_resolution_clock::now();
+        uniform_int_distribution<int> dv(1,1e6);
+        for(int idx:delIdx){
+            int before=t.stats.insProbe;
+            t.insert(kv[idx].first,dv(helper::rng()));
+            probeInsDel+=t.stats.insProbe-before;
+            nInsDel++;
+        }
+        tIns+=chrono::duration_cast<chrono::microseconds>(t2-t1).count();
+        tHit+=chrono::duration_cast<chrono::microseconds>(t4-t3).count();
+        tMiss+=chrono::duration_cast<chrono::microseconds>(t6-t5).count();
+        tDel+=chrono::duration_cast<chrono::microseconds>(t8-t7).count();
+        if(r==0) table.stats=t.stats;
+    }
+    int nHit=hitIdx.size()*RUN, nMiss=missKeys.size()*RUN;
+    res.insTime=tIns/RUN;
+    res.searchTime=(tHit+tMiss)/RUN;
+    res.delTime=tDel/RUN;
+    res.avgHit=nHit?double(probeHit)/nHit:0;
+    res.avgMiss=nMiss?double(probeMiss)/nMiss:0;
+    res.avgInsAfterDel=nInsDel?double(probeInsDel)/nInsDel:0;
+    return res;
+}
+
 
 void summary(double lf1,double lf2,const BenchResult& a,const BenchResult& b,const BenchResult& c,const BenchResult& d,const BenchResult& e,const BenchResult& f){
     cout<<"\n===== TABLE OF PERFORMANCE COMPARISON (us) =====\n";
@@ -129,11 +187,11 @@ void summary(double lf1,double lf2,const BenchResult& a,const BenchResult& b,con
     cout<<setw(50)<<left<<"[Avg probe/insert-after-delete] LF2"<<setw(20)<<b.avgInsAfterDel<<setw(20)<<d.avgInsAfterDel<<setw(20)<<f.avgInsAfterDel<<'\n';
 }
 
-void printCluster(const HashTable<int,int>& dh,const HashTable<int,int>& lh,const HashTable<int,int>& qh,const string& label){
+void printCluster(const BenchResult& dh,const BenchResult& lh,const BenchResult& qh,const string& label){
     cout<<"\n===== CLUSTER LENGTH STATISTICS - "<<label<<" =====\n";
     cout<<setw(32)<<left<<" "<<setw(20)<<"Double Hash"<<setw(20)<<"Linear"<<setw(20)<<"Quadratic"<<'\n';
-    cout<<setw(32)<<left<<"[Max cluster length]:"<<setw(20)<<dh.maxCluster()<<setw(20)<<lh.maxCluster()<<setw(20)<<qh.maxCluster()<<'\n';
-    cout<<setw(32)<<left<<"[Avg cluster length]:"<<setw(20)<<dh.avgCluster()<<setw(20)<<lh.avgCluster()<<setw(20)<<qh.avgCluster()<<'\n';
+    cout<<setw(32)<<left<<"[Max cluster length]:"<<setw(20)<<dh.maxCluster<<setw(20)<<lh.maxCluster<<setw(20)<<qh.maxCluster<<'\n';
+    cout<<setw(32)<<left<<"[Avg cluster length]:"<<setw(20)<<dh.avgCluster<<setw(20)<<lh.avgCluster<<setw(20)<<qh.avgCluster<<'\n';
 }
 
 vector<int> getSizes(){ string line; cout<<"Enter a list of the number of elements to test (space separated): "; getline(cin,line); stringstream ss(line); vector<int> v; int x; while(ss>>x) v.push_back(x); return v; }
@@ -157,9 +215,11 @@ int main(){
                 HashTable<int,int> dh1(N1,Probing::DOUBLE,allow), dh2(N2,Probing::DOUBLE,allow);
                 HashTable<int,int> lh1(N1,Probing::LINEAR,allow), lh2(N2,Probing::LINEAR,allow);
                 HashTable<int,int> qh1(N1,Probing::QUADRATIC,allow), qh2(N2,Probing::QUADRATIC,allow);
-                printCluster(dh1,lh1,qh1,"After Insert with LF1");
-                printCluster(dh2,lh2,qh2,"After Insert with LF2");
-                BenchResult r1=test(dh1,kv,hit,miss,del), r2=test(dh2,kv,hit,miss,del), r3=test(lh1,kv,hit,miss,del), r4=test(lh2,kv,hit,miss,del), r5=test(qh1,kv,hit,miss,del), r6=test(qh2,kv,hit,miss,del);
+                BenchResult r1=test(dh1,kv,hit,miss,del), r2=test(dh2,kv,hit,miss,del),
+                           r3=test(lh1,kv,hit,miss,del), r4=test(lh2,kv,hit,miss,del),
+                           r5=test(qh1,kv,hit,miss,del), r6=test(qh2,kv,hit,miss,del);
+                printCluster(r1,r3,r5,"After Insert with LF1");
+                printCluster(r2,r4,r6,"After Insert with LF2");
                 summary(lf1,lf2,r1,r2,r3,r4,r5,r6);
             }
         }
