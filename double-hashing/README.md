@@ -16,7 +16,14 @@ double-hashing/
 └── main.cpp          # File mã nguồn chính
 ```
 
-Sau khi chèn dữ liệu, chương trình sẽ thống kê độ dài cluster cho từng phương pháp dò.
+## Mô tả chương trình
+
+Chương trình `main.cpp` thực hiện benchmark ba phương pháp dò
+(Double Hashing, Linear Probing và Quadratic Probing) trên các bộ dữ
+liệu sinh theo ba mẫu: ngẫu nhiên, tuần tự và có cụm. Mỗi bộ dữ liệu
+được kiểm thử với hai hệ số tải 0.5 và 0.9, đồng thời tùy chọn bật/tắt
+rehash. Kết quả bao gồm thời gian thực thi các thao tác (insert,
+search, delete) và thống kê độ dài cluster của từng phương pháp.
 
 ## Hướng dẫn build & chạy
 
@@ -34,8 +41,24 @@ g++ -std=c++17 -O2 main.cpp -o double-hashing
 ```
 
 Sau khi chèn dữ liệu, chương trình sẽ thống kê độ dài cluster cho từng phương pháp dò.
-Ngoài ra kết quả tổng hợp cũng được ghi vào file `results.csv` để tiện mở bằng Excel.
+Ngoài ra kết quả tổng hợp cũng được ghi vào file `time.csv` để tiện mở bằng Excel.
 Thông tin chi tiết về độ dài cluster được lưu tại file `clusters.csv`.
+
+## Input
+
+Khi chạy, chương trình yêu cầu nhập một dòng gồm các số nguyên dương cách
+nhau bởi dấu cách, đại diện cho số lượng phần tử muốn kiểm thử. Ví dụ:
+
+```text
+1000 2000 5000
+```
+
+## Output
+
+Kết quả thống kê được in ra màn hình và đồng thời lưu vào hai file CSV:
+
+- `time.csv`: thời gian thực thi của các thao tác insert, search và delete.
+- `clusters.csv`: độ dài cụm khóa sau khi chèn.
 
 ## Tác giả
 
