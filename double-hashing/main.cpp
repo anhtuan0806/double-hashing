@@ -462,8 +462,12 @@ namespace BenchmarkUtils {
         }
 
         // In thống kê cluster length
-        std::cout << "\n===== CLUSTER LENGTH STATISTICS"
-            << (label.empty() ? "" : (" - " + label)) << " =====\n";
+        std::string labelStr;
+        if (label.empty())
+            labelStr = "";
+        else
+            labelStr = " - " + label;
+        std::cout << "\n===== CLUSTER LENGTH STATISTICS" << labelStr << " =====\n";
         std::cout << std::setw(32) << std::left << " "
             << std::setw(20) << "Double Hashing"
             << std::setw(20) << "Linear Probing"
@@ -563,10 +567,21 @@ namespace BenchmarkUtils {
         void printDetailStats(const std::string& algoName, double lf, Table& table) {
             const auto& stats = table.stats;
 
-            double avgInsertProbes = (stats.nInsert > 0) ? 1.0 * stats.totalProbesInsert / stats.nInsert : 0;
-            double collisionRate = (stats.nInsert > 0) ? 100.0 * stats.totalCollision / stats.nInsert : 0;
-            double avgSearchProbes = (stats.nSearch > 0) ? 1.0 * stats.totalProbesSearch / stats.nSearch : 0;
-            double avgDeleteProbes = (stats.nDelete > 0) ? 1.0 * stats.totalProbesDelete / stats.nDelete : 0;
+            double avgInsertProbes = 0;
+            if (stats.nInsert > 0)
+                avgInsertProbes = 1.0 * stats.totalProbesInsert / stats.nInsert;
+
+            double collisionRate = 0;
+            if (stats.nInsert > 0)
+                collisionRate = 100.0 * stats.totalCollision / stats.nInsert;
+
+            double avgSearchProbes = 0;
+            if (stats.nSearch > 0)
+                avgSearchProbes = 1.0 * stats.totalProbesSearch / stats.nSearch;
+
+            double avgDeleteProbes = 0;
+            if (stats.nDelete > 0)
+                avgDeleteProbes = 1.0 * stats.totalProbesDelete / stats.nDelete;
 
             std::cout << std::left
                 << std::setw(20) << algoName
@@ -672,10 +687,20 @@ namespace BenchmarkUtils {
         res.insertTime = totalInsertTime / NUM_RUNS;
         res.searchTime = (totalSearchHitTime + totalSearchMissTime) / NUM_RUNS;
         res.deleteTime = totalDeleteTime / NUM_RUNS;
-        res.avgProbeSearchHit = nHit ? static_cast<double>(totalProbeSearchHit) / static_cast<double>(nHit) : 0.0;
-        res.avgProbeSearchMiss = nMiss ? static_cast<double>(totalProbeSearchMiss) / static_cast<double>(nMiss) : 0.0;
-        res.avgProbeInsertAfterDelete =
-            nInsertAfterDelete ? static_cast<double>(totalProbeInsertAfterDelete) / static_cast<double>(nInsertAfterDelete) : 0.0;
+        if (nHit)
+            res.avgProbeSearchHit = static_cast<double>(totalProbeSearchHit) / static_cast<double>(nHit);
+        else
+            res.avgProbeSearchHit = 0.0;
+
+        if (nMiss)
+            res.avgProbeSearchMiss = static_cast<double>(totalProbeSearchMiss) / static_cast<double>(nMiss);
+        else
+            res.avgProbeSearchMiss = 0.0;
+
+        if (nInsertAfterDelete)
+            res.avgProbeInsertAfterDelete = static_cast<double>(totalProbeInsertAfterDelete) / static_cast<double>(nInsertAfterDelete);
+        else
+            res.avgProbeInsertAfterDelete = 0.0;
 
         return res;
     }
