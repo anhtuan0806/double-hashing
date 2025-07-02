@@ -7,7 +7,6 @@
 #include <iomanip>
 #include <sstream>
 #include <unordered_set>
-#include <functional>
 
 enum SlotState {
     EMPTY,
@@ -62,7 +61,7 @@ namespace helper {
         }
     }
 
-    // Hàm iota thủ công 
+    // Hàm iota thủ công
     template<typename Iterator, typename T>
     void iota(Iterator begin, Iterator end, T value) {
         while (begin != end) {
@@ -152,15 +151,6 @@ public:
         TABLE_SIZE = n;
         keysPresent = 0;
         hashTable.assign(TABLE_SIZE, Entry<K, V>());
-    }
-
-    // Getter và setter cho shouldRehash
-    void setShouldRehash(bool flag) {
-        shouldRehash = flag;
-    }
-
-    bool getShouldRehash() const {
-        return shouldRehash;
     }
 
     // Kiểm tra bảng đã đầy chưa
@@ -377,7 +367,7 @@ namespace BenchmarkUtils {
     }
 
     namespace generator {
-		// Hàm sinh các cặp key-value ngẫu nhiên
+        // Hàm sinh các cặp key-value ngẫu nhiên
         std::vector<std::pair<int, int>> generateRandomKeyVals(int M, int keyUpper, int valUpper = 1000000) {
             std::uniform_int_distribution<int> distKey(1, keyUpper);
             std::uniform_int_distribution<int> distVal(1, valUpper);
@@ -523,7 +513,7 @@ namespace BenchmarkUtils {
                 << std::setw(20) << lpt2.deleteTime
                 << std::setw(20) << qpt2.deleteTime << '\n';
 
-            // In probe search hit/miss/insert after delete 
+            // In probe search hit/miss/insert after delete
             std::cout << "\n----- PROBE STATISTICS (Average probes per operation) -----\n";
             std::cout << std::setw(50) << std::left << "[Avg probe/search HIT] LF1:"
                 << std::setw(20) << dht1.avgProbeSearchHit
