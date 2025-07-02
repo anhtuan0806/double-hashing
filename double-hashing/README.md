@@ -35,6 +35,7 @@ g++ -std=c++17 -O2 main.cpp -o double-hashing
 
 Sau khi chèn dữ liệu, chương trình sẽ thống kê độ dài cluster cho từng phương pháp dò.
 Ngoài ra kết quả tổng hợp cũng được ghi vào file `results.csv` để tiện mở bằng Excel.
+Thông tin chi tiết về độ dài cluster được lưu tại file `clusters.csv`.
 
 ## Tác giả
 

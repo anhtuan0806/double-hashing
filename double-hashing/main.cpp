@@ -420,6 +420,20 @@ void printCluster(const BenchResult &dh, const BenchResult &lh,
        << qh.avgCluster << '\n';
 }
 
+void writeClusterCSV(const string &pattern, const string &rehashMode, int M,
+                     const string &label, const BenchResult &dh,
+                     const BenchResult &lh, const BenchResult &qh) {
+  bool newFile = !std::filesystem::exists("clusters.csv");
+  ofstream csv("clusters.csv", ios::app);
+  if (newFile) {
+    csv <<
+        "Pattern,Rehash,TestSize,Label,Max_DH,Max_LH,Max_QH,Avg_DH,Avg_LH,Avg_QH\n";
+  }
+  csv << pattern << ',' << rehashMode << ',' << M << ',' << label << ',';
+  csv << dh.maxCluster << ',' << lh.maxCluster << ',' << qh.maxCluster << ',';
+  csv << dh.avgCluster << ',' << lh.avgCluster << ',' << qh.avgCluster << '\n';
+}
+
 // Nhập danh sách các kích thước cần kiểm thử
 vector<int> getSizes() {
   string line;
@@ -489,7 +503,9 @@ int main() {
                     r5 = test(qh1, kv, hit, miss, del),
                     r6 = test(qh2, kv, hit, miss, del);
         printCluster(r1, r3, r5, "After Insert with LF1");
+        writeClusterCSV(pattern, rh, M, "LF1", r1, r3, r5);
         printCluster(r2, r4, r6, "After Insert with LF2");
+        writeClusterCSV(pattern, rh, M, "LF2", r2, r4, r6);
         summary(lf1, lf2, r1, r2, r3, r4, r5, r6);
         writeSummaryCSV(pattern, rh, M, lf1, lf2, r1, r2, r3, r4, r5, r6);
       }
