@@ -211,14 +211,19 @@ public:
 private:
     // Tính vị trí cần kiểm tra tiếp theo tùy theo phương pháp dò
     int calcProbe(int base, int step, K key) const {
+        long long res;
         switch (type) {
         case Probing::LINEAR:
-            return (base + step) % sz;
+            res = base + static_cast<long long>(step);
+            break;
         case Probing::QUADRATIC:
-            return (base + step * step) % sz;
+            res = base + 1LL * step * step;
+            break;
         default:
-            return (base + step * (prime - (key % prime))) % sz;
+            res = base + 1LL * step * (prime - (key % prime));
+            break;
         }
+        return static_cast<int>(res % sz);
     }
 };
 
