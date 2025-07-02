@@ -1446,26 +1446,35 @@ namespace BenchmarkUtils {
     }
 }
 
-int main(void) {
-    // Bước 1: Lấy đầu vào từ người dùng
-    int M = BenchmarkUtils::getInput::getTestSize();
-    double lf1 = BenchmarkUtils::getInput::getUserLoadFactor();
-    double lf2 = 0.5; // tự động chọn
-    double missRate = BenchmarkUtils::getInput::getMissRate();
-    int numDelete = M;
+struct BenchmarkConfig {
+    int M;
+    double lf1;
+    double lf2;
+    double missRate;
+    int numDelete;
+};
 
-    // Bước 2: Tính kích thước bảng băm cần thiết cho 2 mức load factor
-    int N1 = helper::nextPrime(int(M / lf1));
-    int N2 = helper::nextPrime(int(M / lf2));
-    BenchmarkUtils::printOutput::printTableSizes(lf1, lf2, N1, N2);
+void runBenchmarks(const BenchmarkConfig& cfg) {
+    int N1 = helper::nextPrime(int(cfg.M / cfg.lf1));
+    int N2 = helper::nextPrime(int(cfg.M / cfg.lf2));
+    BenchmarkUtils::printOutput::printTableSizes(cfg.lf1, cfg.lf2, N1, N2);
 
-    // Bước 3: Chạy benchmark cho bảng băm cố định
-    BenchmarkUtils::runStaticBenchmark(M, lf1, lf2, N1, N2, missRate, numDelete);
+    BenchmarkUtils::runStaticBenchmark(cfg.M, cfg.lf1, cfg.lf2,
+                                       N1, N2, cfg.missRate, cfg.numDelete);
     std::cout << "\n=== FINISHED ALL DATA PATTERNS ===\n";
 
-    // Bước 4: Chạy benchmark cho bảng băm động
-    BenchmarkUtils::runDynamicInsertExperiment(M);
-	std::cout << "\n=== FINISHED DYNAMIC INSERT EXPERIMENT ===\n";
+    BenchmarkUtils::runDynamicInsertExperiment(cfg.M);
+    std::cout << "\n=== FINISHED DYNAMIC INSERT EXPERIMENT ===\n";
+}
 
+int main() {
+    BenchmarkConfig cfg;
+    cfg.M = BenchmarkUtils::getInput::getTestSize();
+    cfg.lf1 = BenchmarkUtils::getInput::getUserLoadFactor();
+    cfg.lf2 = 0.5; // tự động chọn
+    cfg.missRate = BenchmarkUtils::getInput::getMissRate();
+    cfg.numDelete = cfg.M;
+
+    runBenchmarks(cfg);
     return 0;
 }
