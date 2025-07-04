@@ -11,7 +11,7 @@
 
 ```text
 double-hashing/
-├── LICENSE           # Thông tin bản quyền
+├── Report.pdf        # Bản báo cáo
 ├── README.md         # Tài liệu mô tả, hướng dẫn dự án
 └── main.cpp          # File mã nguồn chính
 ```
